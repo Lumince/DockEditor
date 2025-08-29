@@ -12,7 +12,7 @@ public class RootShell {
     private static Process rootProcess;
     private static DataOutputStream rootOutput;
     private static BufferedReader rootStdout;
-    private static BufferedReader rootStderr;
+    private static BufferedReader rootStderr; // This is now unused but kept for structure
 
     private static String lastCommandOutput = "";
 
@@ -27,7 +27,7 @@ public class RootShell {
             rootProcess = Runtime.getRuntime().exec(suCommand);
             rootOutput = new DataOutputStream(rootProcess.getOutputStream());
             rootStdout = new BufferedReader(new InputStreamReader(rootProcess.getInputStream()));
-            rootStderr = new BufferedReader(new InputStreamReader(rootProcess.getErrorStream()));
+            rootStderr = new BufferedReader(new InputStreamReader(rootProcess.getErrorStream())); // Still need to initialize it
 
             // Verify root access by running "id"
             rootOutput.writeBytes("id\n");
@@ -87,7 +87,7 @@ public class RootShell {
      * Returns the aggregated output from stdout and stderr.
      */
     public static String executeCommands(List<String> commands) {
-        if (rootProcess == null || rootOutput == null || rootStdout == null || rootStderr == null) {
+        if (rootProcess == null || rootOutput == null || rootStdout == null) {
             lastCommandOutput = "Root shell not initialized or streams are null.";
             return lastCommandOutput;
         }
@@ -95,7 +95,8 @@ public class RootShell {
         StringBuilder output = new StringBuilder();
         try {
             for (String command : commands) {
-                rootOutput.writeBytes(command + "\n");
+                // **THE FIX IS HERE**: Append " 2>&1" to merge stderr into stdout
+                rootOutput.writeBytes(command + " 2>&1\n");
             }
             // Add a unique marker to indicate the end of command output
             rootOutput.writeBytes("echo --END_OF_COMMAND--\n");
@@ -103,16 +104,13 @@ public class RootShell {
 
             String line;
             while ((line = rootStdout.readLine()) != null) {
-                if (line.equals("--END_OF_COMMAND--")) {
+                if (line.contains("--END_OF_COMMAND--")) {
                     break;
                 }
                 output.append(line).append("\n");
             }
 
-            // Read any remaining stderr
-            while (rootStderr.ready() && (line = rootStderr.readLine()) != null) {
-                output.append("STDERR: ").append(line).append("\n");
-            }
+            // The stderr stream is now merged, so we don't need to read it separately.
 
             lastCommandOutput = output.toString();
             return lastCommandOutput;
@@ -129,11 +127,9 @@ public class RootShell {
         String command = "cat \"" + filePath + "\"";
         String result = executeCommand(command);
         
-        // Check for error messages that might indicate permission issues or file not found
         if (result != null && (result.contains("Permission denied") || result.contains("No such file or directory") || result.trim().isEmpty())) {
-            // Log the full output for debugging
             lastCommandOutput = result; 
-            return null; // Return null to indicate failure to read content
+            return null;
         }
         return result != null ? result.trim() : null;
     }
@@ -143,13 +139,11 @@ public class RootShell {
      */
     public static boolean writeFileContent(String filePath, String content) {
         List<String> commands = new ArrayList<>();
-        // Use printf for better handling of multi-line content and special characters
         commands.add("printf '%s' '" + content.replace("'", "'\"'\"'") + "' > \"" + filePath + "\"");
         commands.add("chmod 660 \"" + filePath + "\"");
         commands.add("chown system:system \"" + filePath + "\"");
         String result = executeCommands(commands);
 
-        // Check for error messages
         if (result != null && (result.contains("Permission denied") || result.contains("No such file or directory"))) {
             lastCommandOutput = result;
             return false;

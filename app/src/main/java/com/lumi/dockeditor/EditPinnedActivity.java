@@ -24,6 +24,9 @@ public class EditPinnedActivity extends AppCompatActivity {
         binding = ActivityEditPinnedBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
+        // Add this line to enable the back arrow in the action bar
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+
         // Get the list of apps passed from MainActivity
         appList = getIntent().getParcelableArrayListExtra("appList");
         if (appList == null) {

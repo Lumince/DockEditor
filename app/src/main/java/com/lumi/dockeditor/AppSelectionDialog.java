@@ -35,15 +35,23 @@ public class AppSelectionDialog {
         
         RecyclerView recyclerView = new RecyclerView(context);
         recyclerView.setLayoutManager(new LinearLayoutManager(context));
-        recyclerView.setAdapter(new AppSelectionAdapter(installedApps, listener));
-        
-        new AlertDialog.Builder(context)
+        // Use a new adapter instance to prevent state issues if dialog is reused
+        AppSelectionAdapter adapter = new AppSelectionAdapter(installedApps, listener, () -> {
+            // This is a simple way to close the dialog from the adapter
+            // A more robust solution would involve passing the Dialog instance
+        });
+        recyclerView.setAdapter(adapter);
+
+        AlertDialog dialog = new AlertDialog.Builder(context)
             .setTitle("Select App")
             .setView(recyclerView)
             .setNegativeButton("Cancel", null)
             .show();
+
+        // Pass the dialog to the adapter so it can be dismissed
+        adapter.setDialog(dialog);
     }
-    
+
     private List<InstalledAppInfo> getInstalledApps() {
         List<InstalledAppInfo> apps = new ArrayList<>();
         PackageManager pm = context.getPackageManager();
@@ -51,20 +59,21 @@ public class AppSelectionDialog {
         List<ApplicationInfo> installedPackages = pm.getInstalledApplications(PackageManager.GET_META_DATA);
         
         for (ApplicationInfo appInfo : installedPackages) {
-            // Only include user apps and system apps with launchers
-            if ((appInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0 || 
-                pm.getLaunchIntentForPackage(appInfo.packageName) != null) {
-                
-                try {
-                    String appName = pm.getApplicationLabel(appInfo).toString();
-                    apps.add(new InstalledAppInfo(
-                        appInfo.packageName,
-                        appName,
-                        pm.getApplicationIcon(appInfo.packageName)
-                    ));
-                } catch (PackageManager.NameNotFoundException e) {
-                    // Skip this app
+            // THE FILTER HAS BEEN REMOVED to show all apps, including system components.
+            try {
+                // We still don't want to see the editor itself in the list.
+                if (appInfo.packageName.equals(context.getPackageName())) {
+                    continue;
                 }
+                
+                String appName = pm.getApplicationLabel(appInfo).toString();
+                apps.add(new InstalledAppInfo(
+                    appInfo.packageName,
+                    appName,
+                    pm.getApplicationIcon(appInfo.packageName)
+                ));
+            } catch (PackageManager.NameNotFoundException e) {
+                // Skip this app if its details can't be loaded
             }
         }
         
@@ -77,10 +86,15 @@ public class AppSelectionDialog {
     private static class AppSelectionAdapter extends RecyclerView.Adapter<AppSelectionAdapter.ViewHolder> {
         private List<InstalledAppInfo> apps;
         private OnAppSelectedListener listener;
-        
-        public AppSelectionAdapter(List<InstalledAppInfo> apps, OnAppSelectedListener listener) {
+        private Dialog dialog; // Reference to the dialog to close it
+
+        public AppSelectionAdapter(List<InstalledAppInfo> apps, OnAppSelectedListener listener, Runnable closeAction) {
             this.apps = apps;
             this.listener = listener;
+        }
+
+        public void setDialog(Dialog dialog) {
+            this.dialog = dialog;
         }
         
         @NonNull
@@ -102,10 +116,9 @@ public class AppSelectionDialog {
                 if (listener != null) {
                     listener.onAppSelected(app);
                 }
-                // Close dialog
-                if (holder.itemView.getContext() instanceof android.app.Activity) {
-                    // Find and close the dialog - this is a simplified approach
-                    // In a real implementation, you'd pass the dialog reference
+                // Close the dialog when an app is selected
+                if (dialog != null) {
+                    dialog.dismiss();
                 }
             });
         }

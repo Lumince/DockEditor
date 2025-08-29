@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Dock Editor</string>
+    <string name="backup_success">Backup created successfully</string>
+    <string name="backup_failed">Failed to create backup</string>
+    <string name="load_success">File loaded successfully</string>
+    <string name="load_failed">Failed to load file</string>
+    <string name="save_success">Changes saved successfully!</string>
+    <string name="save_failed">Failed to save changes</string>
+    <string name="root_required">Root access is required</string>
+    <string name="root_granted">Root access granted</string>
+    <string name="root_denied">Root access denied</string>
+</resources>

@@ -64,6 +64,13 @@ public class MainActivity extends AppCompatActivity {
         logToUi("Checking for root access...");
         new Thread(() -> {
             boolean hasRoot = RootShell.initRootShell("su --mount-master");
+
+            // **CHANGE IS HERE**: Backup is now created on the background thread after root is confirmed.
+            if (hasRoot) {
+                logToUi("Root access granted. Creating automatic startup backup...");
+                backupFileInternal();
+            }
+
             runOnUiThread(() -> {
                 if (hasRoot) {
                     binding.statusText.setText("Root access granted ✓");
@@ -74,7 +81,8 @@ public class MainActivity extends AppCompatActivity {
                     logToUi("Root access granted with --mount-master.");
                     checkSelinuxStatus();
                     checkSelinuxContext();
-                    checkForExistingBackups();
+                    // The backup check is now called from within backupFileInternal,
+                    // so we don't need to call it here again.
                 } else {
                     binding.statusText.setText("Root access denied ✗");
                     Toast.makeText(this, "Root access is required for this app to function",
@@ -89,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
         logToUi("Loading and parsing file...");
         new Thread(() -> {
             try {
-                backupFileInternal();
+                // **CHANGE IS HERE**: The automatic backup call has been removed from this method.
                 logToUi("Reading content from target file " + TARGET_FILE + "...");
 
                 String content = RootShell.getFileContent(TARGET_FILE);
@@ -406,6 +414,8 @@ public class MainActivity extends AppCompatActivity {
             fos.write(content.getBytes("UTF-8"));
             fos.close();
             logToUi("Internal backup created: " + backupFileName);
+            // This is called from a background thread, so we need to switch to the UI thread
+            // to update the backup button's text and state.
             runOnUiThread(this::checkForExistingBackups);
         } catch (Exception e) {
             logToUi("Internal backup error: " + e.getMessage());

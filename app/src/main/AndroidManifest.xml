@@ -28,7 +28,8 @@
 
         <activity
             android:name=".EditPinnedActivity"
-            android:label="Edit Pinned Apps">
+            android:label="Edit Pinned Apps"
+            android:parentActivityName=".MainActivity">
         </activity>
 
     </application>

@@ -2,18 +2,24 @@ package com.lumi.dockeditor;
 
 import android.os.Bundle;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 import com.lumi.dockeditor.databinding.ActivityEditPinnedBinding;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class EditPinnedActivity extends AppCompatActivity {
     private ActivityEditPinnedBinding binding;
     private AppListAdapter adapter;
     private List<AppInfo> appList;
+    private ItemTouchHelper itemTouchHelper;
 
     private static final String TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml";
     private static final int MAX_APPS = 5;
@@ -24,15 +30,15 @@ public class EditPinnedActivity extends AppCompatActivity {
         binding = ActivityEditPinnedBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        // Add this line to enable the back arrow in the action bar
-        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
-        // Get the list of apps passed from MainActivity
         appList = getIntent().getParcelableArrayListExtra("appList");
         if (appList == null) {
             appList = new ArrayList<>();
             Toast.makeText(this, "Error: Could not load app list.", Toast.LENGTH_LONG).show();
-            finish(); // Close activity if data is missing
+            finish();
             return;
         }
 
@@ -40,11 +46,42 @@ public class EditPinnedActivity extends AppCompatActivity {
         setupButtons();
         updateAddButtonState();
     }
+    
+    // Add this method to handle the back arrow
+    @Override
+    public boolean onSupportNavigateUp() {
+        onBackPressed();
+        return true;
+    }
 
     private void setupRecyclerView() {
-        adapter = new AppListAdapter(appList, this::onAppReorder, this::onAppClick, this::onAppRemove);
+        adapter = new AppListAdapter(appList, 
+            viewHolder -> itemTouchHelper.startDrag(viewHolder), // Start drag listener
+            this::onAppClick, 
+            this::onAppRemove);
+        
         binding.appsRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         binding.appsRecyclerView.setAdapter(adapter);
+
+        // Setup ItemTouchHelper
+        ItemTouchHelper.Callback callback = new ItemTouchHelper.SimpleCallback(
+                ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
+            @Override
+            public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder, @NonNull RecyclerView.ViewHolder target) {
+                int fromPosition = viewHolder.getAdapterPosition();
+                int toPosition = target.getAdapterPosition();
+                onAppReorder(fromPosition, toPosition);
+                return true;
+            }
+
+            @Override
+            public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
+                // Not used
+            }
+        };
+        
+        itemTouchHelper = new ItemTouchHelper(callback);
+        itemTouchHelper.attachToRecyclerView(binding.appsRecyclerView);
     }
 
     private void setupButtons() {
@@ -90,7 +127,7 @@ public class EditPinnedActivity extends AppCompatActivity {
                         Toast.makeText(this, "Changes saved successfully!\nRestart Oculus system to see changes.",
                                 Toast.LENGTH_LONG).show();
                         binding.saveButton.setEnabled(false);
-                        finish(); // Close the activity after saving
+                        finish();
                     } else {
                         Toast.makeText(this, "Save failed: check log for details.", Toast.LENGTH_SHORT).show();
                     }
@@ -105,8 +142,7 @@ public class EditPinnedActivity extends AppCompatActivity {
 
     private void onAppReorder(int from, int to) {
         if (from != to) {
-            AppInfo app = appList.remove(from);
-            appList.add(to, app);
+            Collections.swap(appList, from, to);
             adapter.notifyItemMoved(from, to);
             binding.saveButton.setEnabled(true);
         }

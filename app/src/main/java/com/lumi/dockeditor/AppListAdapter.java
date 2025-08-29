@@ -1,5 +1,8 @@
 package com.lumi.dockeditor;
 
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.graphics.drawable.Drawable;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
@@ -12,12 +15,12 @@ import java.util.List;
 
 public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.AppViewHolder> {
     private List<AppInfo> apps;
-    private OnItemMoveListener moveListener;
+    private OnStartDragListener dragListener;
     private OnItemClickListener clickListener;
     private OnItemRemoveListener removeListener;
-    
-    public interface OnItemMoveListener {
-        void onItemMove(int fromPosition, int toPosition);
+
+    public interface OnStartDragListener {
+        void onStartDrag(RecyclerView.ViewHolder viewHolder);
     }
     
     public interface OnItemClickListener {
@@ -28,10 +31,10 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.AppViewH
         void onItemRemove(int position);
     }
     
-    public AppListAdapter(List<AppInfo> apps, OnItemMoveListener moveListener, 
+    public AppListAdapter(List<AppInfo> apps, OnStartDragListener dragListener,
                          OnItemClickListener clickListener, OnItemRemoveListener removeListener) {
         this.apps = apps;
-        this.moveListener = moveListener;
+        this.dragListener = dragListener;
         this.clickListener = clickListener;
         this.removeListener = removeListener;
     }
@@ -47,7 +50,7 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.AppViewH
     @Override
     public void onBindViewHolder(@NonNull AppViewHolder holder, int position) {
         AppInfo app = apps.get(position);
-        holder.bind(app, position);
+        holder.bind(app);
     }
     
     @Override
@@ -56,15 +59,16 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.AppViewH
     }
     
     public class AppViewHolder extends RecyclerView.ViewHolder {
+        private ImageView appIcon;
         private TextView appName;
         private TextView packageName;
         private TextView activityName;
         private ImageView dragHandle;
         private ImageView removeButton;
-        private int startPosition = -1;
         
         public AppViewHolder(@NonNull View itemView) {
             super(itemView);
+            appIcon = itemView.findViewById(R.id.appIcon);
             appName = itemView.findViewById(R.id.appName);
             packageName = itemView.findViewById(R.id.packageName);
             activityName = itemView.findViewById(R.id.activityName);
@@ -72,10 +76,14 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.AppViewH
             removeButton = itemView.findViewById(R.id.removeButton);
         }
         
-        public void bind(AppInfo app, int position) {
+        public void bind(AppInfo app) {
             appName.setText(app.getDisplayName());
             packageName.setText(app.packageName);
             activityName.setText(app.activity.isEmpty() ? "Default Activity" : app.activity);
+
+            // **UPDATED ICON LOGIC**
+            // Use the new, smarter method to get the display icon
+            appIcon.setImageDrawable(app.getDisplayIcon(itemView.getContext()));
             
             // Click to edit app
             itemView.setOnClickListener(v -> {
@@ -93,19 +101,10 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.AppViewH
             
             // Drag handle for reordering
             dragHandle.setOnTouchListener((v, event) -> {
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        startPosition = getAdapterPosition();
-                        return true;
-                    case MotionEvent.ACTION_UP:
-                        if (startPosition != -1) {
-                            int endPosition = getAdapterPosition();
-                            if (startPosition != endPosition && moveListener != null) {
-                                moveListener.onItemMove(startPosition, endPosition);
-                            }
-                        }
-                        startPosition = -1;
-                        return true;
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    if (dragListener != null) {
+                        dragListener.onStartDrag(this);
+                    }
                 }
                 return false;
             });

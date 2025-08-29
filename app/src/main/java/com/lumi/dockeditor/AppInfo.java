@@ -1,5 +1,8 @@
 package com.lumi.dockeditor;
 
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.graphics.drawable.Drawable;
 import android.os.Parcel;
 import android.os.Parcelable;
 
@@ -62,6 +65,28 @@ public class AppInfo implements Parcelable {
                     return appName.substring(0, 1).toUpperCase() + appName.substring(1);
                 }
                 return packageName;
+        }
+    }
+    
+    // **NEW METHOD TO GET ICONS**
+    @SuppressWarnings("deprecation") // Needed for getDrawable on older APIs
+    public Drawable getDisplayIcon(Context context) {
+        PackageManager pm = context.getPackageManager();
+
+        // Handle special cases that don't have standard packages
+        switch (packageName) {
+            case "messenger_system_app":
+                return context.getResources().getDrawable(android.R.drawable.ic_dialog_email);
+            case "share_system_app":
+                return context.getResources().getDrawable(android.R.drawable.ic_menu_share);
+        }
+
+        // Try to get the icon for a standard package
+        try {
+            return pm.getApplicationIcon(packageName);
+        } catch (PackageManager.NameNotFoundException e) {
+            // Return a generic fallback icon if the package can't be found
+            return context.getResources().getDrawable(android.R.drawable.sym_def_app_icon);
         }
     }
 

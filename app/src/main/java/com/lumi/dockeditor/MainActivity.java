@@ -22,13 +22,10 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
-    // Removed AppListAdapter and appList as they are now in EditPinnedActivity
     
-    // Path to the actual AUI_PREFERENCES.xml file
     private static final String TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml";
     private static final String BACKUP_SUBDIR = "backups";
     
-    // Default AUI_PREFERENCES.xml content
     private static final String DEFAULT_AUI_PREFERENCES =
             "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
             "<map>\n" +
@@ -54,28 +51,23 @@ public class MainActivity extends AppCompatActivity {
         RootShell.shutdown();
     }
     
-    // Removed setupRecyclerView and related UI methods
-    
     private void setupButtons() {
         binding.loadButton.setOnClickListener(v -> loadAndParseFile());
         binding.backupButton.setOnClickListener(v -> backupFile());
         binding.restoreBackupButton.setOnClickListener(v -> showRestoreBackupDialog());
         binding.restoreDefaultButton.setOnClickListener(v -> showRestoreDefaultDialog());
         
-        // Shell command button
         binding.runShellButton.setOnClickListener(v -> runShellCommand());
     }
 
     private void checkRootAccess() {
         logToUi("Checking for root access...");
         new Thread(() -> {
-            // Initialize RootShell with --mount-master for a global mount namespace
             boolean hasRoot = RootShell.initRootShell("su --mount-master");
             runOnUiThread(() -> {
                 if (hasRoot) {
                     binding.statusText.setText("Root access granted ✓");
                     binding.backupButton.setEnabled(true);
-                    binding.restoreBackupButton.setEnabled(true);
                     binding.restoreDefaultButton.setEnabled(true);
                     binding.loadButton.setEnabled(true);
                     binding.runShellButton.setEnabled(true);
@@ -97,8 +89,7 @@ public class MainActivity extends AppCompatActivity {
         logToUi("Loading and parsing file...");
         new Thread(() -> {
             try {
-                // First, create a backup of the current file before loading
-                backupFileInternal(); // Internal backup without Toast feedback
+                backupFileInternal();
                 logToUi("Reading content from target file " + TARGET_FILE + "...");
 
                 String content = RootShell.getFileContent(TARGET_FILE);
@@ -109,16 +100,13 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 logToUi("Parsing XML content...");
-                // The parsing logic now returns the list
                 ArrayList<AppInfo> parsedAppList = parseAuiPreferences(content);
 
                 runOnUiThread(() -> {
                     Toast.makeText(this, "File loaded successfully, opening editor...", Toast.LENGTH_SHORT).show();
                     logToUi("File loaded and parsed successfully. Launching editor.");
                     
-                    // Create an Intent to start EditPinnedActivity
                     Intent intent = new Intent(MainActivity.this, EditPinnedActivity.class);
-                    // Pass the parsed list to the new activity
                     intent.putParcelableArrayListExtra("appList", parsedAppList);
                     startActivity(intent);
                 });
@@ -131,7 +119,6 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
     
-    // Modified parseAuiPreferences to return the list instead of updating a member variable
     private ArrayList<AppInfo> parseAuiPreferences(String xmlContent) {
         ArrayList<AppInfo> localAppList = new ArrayList<>();
         try {
@@ -168,11 +155,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
-    // --- All other methods (backup, restore, shell command, etc.) remain the same ---
-    // --- Removed methods: onAppReorder, onAppClick, onAppRemove, updateAddButtonState,
-    // --- showAppSelectionDialog, showActivitySelectionDialog, saveChanges.
-    
-    // [The rest of your MainActivity code: checkSelinuxStatus, backupFile, restoreDefaults, etc.]
     private void runShellCommand() {
         String command = binding.commandEditText.getText().toString().trim();
         if (command.isEmpty()) {
@@ -196,7 +178,7 @@ public class MainActivity extends AppCompatActivity {
             String output = RootShell.executeCommand("getenforce").trim();
             runOnUiThread(() -> {
                 if ("Enforcing".equalsIgnoreCase(output)) {
-                    binding.selinuxStatusText.setText("SELinux: Enforcing ⚠️"); // Green checkmark assuming it's correctly enforcing
+                    binding.selinuxStatusText.setText("SELinux: Enforcing ⚠️");
                 } else if ("Permissive".equalsIgnoreCase(output)) {
                     binding.selinuxStatusText.setText("SELinux: Permissive ✓");
                 } else {
@@ -234,6 +216,7 @@ public class MainActivity extends AppCompatActivity {
                         logToUi("No backups found.");
                     } else {
                         binding.restoreBackupButton.setText("Restore Backup (" + backupFiles.length + ")");
+                        binding.restoreBackupButton.setEnabled(true);
                         logToUi(backupFiles.length + " backups found.");
                     }
                 });
@@ -264,7 +247,6 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // Sort by date (newest first)
             java.util.Arrays.sort(backupFiles, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
 
             String[] backupNames = new String[backupFiles.length];
@@ -306,7 +288,7 @@ public class MainActivity extends AppCompatActivity {
         logToUi("Restoring from backup: " + backupFile.getName());
         new Thread(() -> {
             try {
-                String backupContent = readFileContent(backupFile); // Read from app's local cache
+                String backupContent = readFileContent(backupFile);
                 if (backupContent == null) {
                     runOnUiThread(() -> Toast.makeText(this, "Restore failed: Could not read backup file.", Toast.LENGTH_SHORT).show());
                     logToUi("Restore failed: Could not read backup file.");
@@ -402,7 +384,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    // Helper for internal backup without UI toast
     private void backupFileInternal() {
         try {
             String content = RootShell.getFileContent(TARGET_FILE);
@@ -425,7 +406,7 @@ public class MainActivity extends AppCompatActivity {
             fos.write(content.getBytes("UTF-8"));
             fos.close();
             logToUi("Internal backup created: " + backupFileName);
-            checkForExistingBackups(); // Update backup count
+            runOnUiThread(this::checkForExistingBackups);
         } catch (Exception e) {
             logToUi("Internal backup error: " + e.getMessage());
         }
@@ -440,7 +421,6 @@ public class MainActivity extends AppCompatActivity {
         return new String(data, "UTF-8");
     }
 
-    // New method to log messages to the UI and console
     private void logToUi(String message) {
         runOnUiThread(() -> {
             binding.logTextView.append(message + "\n");

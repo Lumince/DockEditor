@@ -1,11 +1,11 @@
 package com.lumi.dockeditor;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.recyclerview.widget.LinearLayoutManager;
 import com.lumi.dockeditor.databinding.ActivityMainBinding;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -22,14 +22,12 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
-    private AppListAdapter adapter;
-    private List<AppInfo> appList;
-
+    // Removed AppListAdapter and appList as they are now in EditPinnedActivity
+    
     // Path to the actual AUI_PREFERENCES.xml file
     private static final String TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml";
     private static final String BACKUP_SUBDIR = "backups";
-    private static final int MAX_APPS = 5;
-
+    
     // Default AUI_PREFERENCES.xml content
     private static final String DEFAULT_AUI_PREFERENCES =
             "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
@@ -44,43 +42,26 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
-
-        appList = new ArrayList<>();
-
-        setupRecyclerView();
+        
         setupButtons();
         checkRootAccess();
     }
-
+    
     @Override
     protected void onDestroy() {
         super.onDestroy();
         // Shutdown the persistent root shell when the activity is destroyed
         RootShell.shutdown();
     }
-
-    private void setupRecyclerView() {
-        adapter = new AppListAdapter(appList, this::onAppReorder, this::onAppClick, this::onAppRemove);
-        binding.appsRecyclerView.setLayoutManager(new LinearLayoutManager(this));
-        binding.appsRecyclerView.setAdapter(adapter);
-    }
-
+    
+    // Removed setupRecyclerView and related UI methods
+    
     private void setupButtons() {
         binding.loadButton.setOnClickListener(v -> loadAndParseFile());
-        binding.saveButton.setOnClickListener(v -> saveChanges());
         binding.backupButton.setOnClickListener(v -> backupFile());
         binding.restoreBackupButton.setOnClickListener(v -> showRestoreBackupDialog());
         binding.restoreDefaultButton.setOnClickListener(v -> showRestoreDefaultDialog());
-
-
-        binding.addAppButton.setOnClickListener(v -> {
-            if (appList.size() < MAX_APPS) {
-                showAppSelectionDialog();
-            } else {
-                Toast.makeText(this, "Maximum of " + MAX_APPS + " apps allowed", Toast.LENGTH_SHORT).show();
-            }
-        });
-
+        
         // Shell command button
         binding.runShellButton.setOnClickListener(v -> runShellCommand());
     }
@@ -111,7 +92,87 @@ public class MainActivity extends AppCompatActivity {
             });
         }).start();
     }
+    
+    private void loadAndParseFile() {
+        logToUi("Loading and parsing file...");
+        new Thread(() -> {
+            try {
+                // First, create a backup of the current file before loading
+                backupFileInternal(); // Internal backup without Toast feedback
+                logToUi("Reading content from target file " + TARGET_FILE + "...");
 
+                String content = RootShell.getFileContent(TARGET_FILE);
+                if (content == null || content.trim().isEmpty()) {
+                    runOnUiThread(() -> Toast.makeText(this, "Failed to read original file", Toast.LENGTH_SHORT).show());
+                    logToUi("Failed to read original file. Output: " + RootShell.getLastCommandOutput());
+                    return;
+                }
+
+                logToUi("Parsing XML content...");
+                // The parsing logic now returns the list
+                ArrayList<AppInfo> parsedAppList = parseAuiPreferences(content);
+
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "File loaded successfully, opening editor...", Toast.LENGTH_SHORT).show();
+                    logToUi("File loaded and parsed successfully. Launching editor.");
+                    
+                    // Create an Intent to start EditPinnedActivity
+                    Intent intent = new Intent(MainActivity.this, EditPinnedActivity.class);
+                    // Pass the parsed list to the new activity
+                    intent.putParcelableArrayListExtra("appList", parsedAppList);
+                    startActivity(intent);
+                });
+
+            } catch (Exception e) {
+                logToUi("Load error: " + e.getMessage());
+                runOnUiThread(() -> Toast.makeText(this, "Load error: " + e.getMessage(),
+                        Toast.LENGTH_SHORT).show());
+            }
+        }).start();
+    }
+    
+    // Modified parseAuiPreferences to return the list instead of updating a member variable
+    private ArrayList<AppInfo> parseAuiPreferences(String xmlContent) {
+        ArrayList<AppInfo> localAppList = new ArrayList<>();
+        try {
+            int startIndex = xmlContent.indexOf("<string name=\"aui_bar_apps_pinned\">") + "<string name=\"aui_bar_apps_pinned\">".length();
+            int endIndex = xmlContent.indexOf("</string>", startIndex);
+
+            if (startIndex == -1 || endIndex == -1) {
+                throw new Exception("Could not find pinned apps data in file");
+            }
+
+            String jsonString = xmlContent.substring(startIndex, endIndex);
+            jsonString = jsonString.replace("&quot;", "\"").replace("&amp;", "&");
+
+            JSONArray appsArray = new JSONArray(jsonString);
+            logToUi("Found " + appsArray.length() + " pinned apps.");
+
+            for (int i = 0; i < appsArray.length(); i++) {
+                JSONObject appObj = appsArray.getJSONObject(i);
+                String packageName = appObj.getString("packageName");
+                String type = appObj.getString("type");
+                String platformName = appObj.getString("platformName");
+                String activity = appObj.optString("activity", "");
+
+                localAppList.add(new AppInfo(packageName, type, platformName, activity));
+            }
+            return localAppList;
+
+        } catch (JSONException e) {
+            logToUi("JSON parsing failed: " + e.getMessage());
+            throw new RuntimeException("Failed to parse app data", e);
+        } catch (Exception e) {
+            logToUi("Parsing error: " + e.getMessage());
+            throw new RuntimeException(e);
+        }
+    }
+    
+    // --- All other methods (backup, restore, shell command, etc.) remain the same ---
+    // --- Removed methods: onAppReorder, onAppClick, onAppRemove, updateAddButtonState,
+    // --- showAppSelectionDialog, showActivitySelectionDialog, saveChanges.
+    
+    // [The rest of your MainActivity code: checkSelinuxStatus, backupFile, restoreDefaults, etc.]
     private void runShellCommand() {
         String command = binding.commandEditText.getText().toString().trim();
         if (command.isEmpty()) {
@@ -259,9 +320,6 @@ public class MainActivity extends AppCompatActivity {
                     if (success) {
                         Toast.makeText(this, "Backup restored successfully!\nRestart Oculus system to see changes.",
                                 Toast.LENGTH_LONG).show();
-                        if (binding.appsRecyclerView.getVisibility() == View.VISIBLE) {
-                            loadAndParseFile(); // Reload UI if visible
-                        }
                         logToUi("Restore successful.");
                     } else {
                         Toast.makeText(this, "Restore failed. Check log for details.", Toast.LENGTH_SHORT).show();
@@ -287,9 +345,6 @@ public class MainActivity extends AppCompatActivity {
                     if (success) {
                         Toast.makeText(this, "Default configuration restored successfully!\nRestart Oculus system to see changes.",
                                 Toast.LENGTH_LONG).show();
-                        if (binding.appsRecyclerView.getVisibility() == View.VISIBLE) {
-                            loadAndParseFile(); // Reload UI if visible
-                        }
                         logToUi("Default configuration restored successfully.");
                     } else {
                         Toast.makeText(this, "Restore failed. Check log for details.", Toast.LENGTH_SHORT).show();
@@ -347,43 +402,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    private void loadAndParseFile() {
-        logToUi("Loading and parsing file...");
-        new Thread(() -> {
-            try {
-                // First, create a backup of the current file before loading
-                backupFileInternal(); // Internal backup without Toast feedback
-                logToUi("Reading content from target file " + TARGET_FILE + "...");
-                
-                String content = RootShell.getFileContent(TARGET_FILE);
-                if (content == null || content.trim().isEmpty()) {
-                    runOnUiThread(() -> Toast.makeText(this, "Failed to read original file", Toast.LENGTH_SHORT).show());
-                    logToUi("Failed to read original file. Output: " + RootShell.getLastCommandOutput());
-                    return;
-                }
-
-                logToUi("Parsing XML content...");
-                parseAuiPreferences(content);
-
-                runOnUiThread(() -> {
-                    binding.appsRecyclerView.setVisibility(View.VISIBLE);
-                    binding.saveButton.setVisibility(View.VISIBLE);
-                    binding.addAppButton.setVisibility(View.VISIBLE);
-                    binding.saveButton.setEnabled(true);
-                    updateAddButtonState();
-                    adapter.notifyDataSetChanged();
-                    Toast.makeText(this, "File loaded successfully", Toast.LENGTH_SHORT).show();
-                    logToUi("File loaded and parsed successfully.");
-                });
-
-            } catch (Exception e) {
-                logToUi("Load error: " + e.getMessage());
-                runOnUiThread(() -> Toast.makeText(this, "Load error: " + e.getMessage(),
-                        Toast.LENGTH_SHORT).show());
-            }
-        }).start();
-    }
-
     // Helper for internal backup without UI toast
     private void backupFileInternal() {
         try {
@@ -420,160 +438,6 @@ public class MainActivity extends AppCompatActivity {
         fis.read(data);
         fis.close();
         return new String(data, "UTF-8");
-    }
-
-    private void parseAuiPreferences(String xmlContent) {
-        try {
-            int startIndex = xmlContent.indexOf("<string name=\"aui_bar_apps_pinned\">") + "<string name=\"aui_bar_apps_pinned\">".length();
-            int endIndex = xmlContent.indexOf("</string>", startIndex);
-
-            if (startIndex == -1 || endIndex == -1) {
-                throw new Exception("Could not find pinned apps data in file");
-            }
-
-            String jsonString = xmlContent.substring(startIndex, endIndex);
-            jsonString = jsonString.replace("&quot;", "\"").replace("&amp;", "&");
-
-            JSONArray appsArray = new JSONArray(jsonString);
-            appList.clear();
-            logToUi("Found " + appsArray.length() + " pinned apps.");
-
-            for (int i = 0; i < appsArray.length(); i++) {
-                JSONObject appObj = appsArray.getJSONObject(i);
-                String packageName = appObj.getString("packageName");
-                String type = appObj.getString("type");
-                String platformName = appObj.getString("platformName");
-                String activity = appObj.optString("activity", "");
-
-                appList.add(new AppInfo(packageName, type, platformName, activity));
-            }
-
-        } catch (JSONException e) {
-            logToUi("JSON parsing failed: " + e.getMessage());
-            throw new RuntimeException("Failed to parse app data", e);
-        } catch (Exception e) {
-            logToUi("Parsing error: " + e.getMessage());
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void onAppReorder(int from, int to) {
-        if (from != to) {
-            AppInfo app = appList.remove(from);
-            appList.add(to, app);
-            adapter.notifyItemMoved(from, to);
-            binding.saveButton.setEnabled(true);
-            logToUi("Reordered app from position " + (from + 1) + " to " + (to + 1));
-        }
-    }
-
-    private void onAppClick(int position) {
-        logToUi("Tapped on app at position " + (position + 1));
-        showAppSelectionDialog(position);
-    }
-
-    private void onAppRemove(int position) {
-        logToUi("Removing app from position " + (position + 1));
-        appList.remove(position);
-        adapter.notifyItemRemoved(position);
-        adapter.notifyItemRangeChanged(position, appList.size());
-        updateAddButtonState();
-        binding.saveButton.setEnabled(true);
-    }
-
-    private void updateAddButtonState() {
-        binding.addAppButton.setEnabled(appList.size() < MAX_APPS);
-        binding.addAppButton.setText(appList.size() >= MAX_APPS ?
-                "Max Apps Reached" : "Add App (" + appList.size() + "/" + MAX_APPS + ")");
-    }
-
-    private void showAppSelectionDialog() {
-        showAppSelectionDialog(-1);
-    }
-
-    private void showAppSelectionDialog(int editPosition) {
-        logToUi("Showing app selection dialog...");
-        AppSelectionDialog dialog = new AppSelectionDialog(this, (selectedApp) -> {
-            showActivitySelectionDialog(selectedApp, editPosition);
-        });
-        dialog.show();
-    }
-
-    private void showActivitySelectionDialog(InstalledAppInfo selectedApp, int editPosition) {
-        logToUi("Showing activity selection dialog for " + selectedApp.appName);
-        ActivitySelectionDialog dialog = new ActivitySelectionDialog(this, selectedApp, (activity) -> {
-            AppInfo newAppInfo = new AppInfo(
-                    selectedApp.packageName,
-                    "APP",
-                    "ANDROID_6DOF",
-                    activity.name
-            );
-
-            if (editPosition == -1) {
-                if (appList.size() < MAX_APPS) {
-                    appList.add(newAppInfo);
-                    adapter.notifyItemInserted(appList.size() - 1);
-                    logToUi("Added new app: " + selectedApp.appName);
-                    updateAddButtonState();
-                }
-            } else {
-                appList.set(editPosition, newAppInfo);
-                adapter.notifyItemChanged(editPosition);
-                logToUi("Updated app at position " + (editPosition + 1) + ": " + selectedApp.appName);
-            }
-
-            binding.saveButton.setEnabled(true);
-        });
-        dialog.show();
-    }
-
-    private void saveChanges() {
-        logToUi("Starting save process...");
-        new Thread(() -> {
-            try {
-                logToUi("Converting app list to JSON...");
-                JSONArray newAppsArray = new JSONArray();
-                for (AppInfo app : appList) {
-                    JSONObject appObj = new JSONObject();
-                    appObj.put("packageName", app.packageName);
-                    appObj.put("type", app.type);
-                    appObj.put("platformName", app.platformName);
-                    if (!app.activity.isEmpty()) {
-                        appObj.put("activity", app.activity);
-                    }
-                    newAppsArray.put(appObj);
-                }
-
-                String encodedJson = newAppsArray.toString()
-                        .replace("\"", "&quot;")
-                        .replace("&", "&amp;");
-
-                String newXmlContent = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
-                        "<map>\n" +
-                        "    <string name=\"aui_bar_apps_pinned\">" + encodedJson + "</string>\n" +
-                        "\t<string name=\"aui_bar_apps_history\">[]</string>\n" +
-                        "</map>";
-                logToUi("Writing changes to target file...");
-                boolean success = RootShell.writeFileContent(TARGET_FILE, newXmlContent);
-
-                runOnUiThread(() -> {
-                    if (success) {
-                        Toast.makeText(this, "Changes saved successfully!\nRestart Oculus system to see changes.",
-                                Toast.LENGTH_LONG).show();
-                        binding.saveButton.setEnabled(false);
-                        logToUi("Changes saved successfully.");
-                    } else {
-                        Toast.makeText(this, "Save failed: check log for details.", Toast.LENGTH_SHORT).show();
-                        logToUi("Save failed. Last command output: " + RootShell.getLastCommandOutput());
-                    }
-                });
-
-            } catch (Exception e) {
-                logToUi("Save error: " + e.getMessage());
-                runOnUiThread(() -> Toast.makeText(this, "Save error: " + e.getMessage(),
-                        Toast.LENGTH_SHORT).show());
-            }
-        }).start();
     }
 
     // New method to log messages to the UI and console

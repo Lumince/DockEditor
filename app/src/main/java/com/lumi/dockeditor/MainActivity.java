@@ -18,8 +18,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays; // <-- New import
-import java.util.Comparator; // <-- New import
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -32,7 +32,6 @@ public class MainActivity extends AppCompatActivity {
     
     private static final String TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml";
     private static final String BACKUP_SUBDIR = "backups";
-    
     private static final int MAX_BACKUPS = 3;
     
     private static final String DEFAULT_AUI_PREFERENCES =
@@ -73,9 +72,10 @@ public class MainActivity extends AppCompatActivity {
         binding.backupButton.setOnClickListener(v -> backupFile());
         binding.restoreBackupButton.setOnClickListener(v -> showRestoreBackupDialog());
         binding.restoreDefaultButton.setOnClickListener(v -> showRestoreDefaultDialog());
-        binding.runShellButton.setOnClickListener(v -> runShellCommand());
         binding.restartSystemUIButton.setOnClickListener(v -> showRestartSystemUIDialog());
 
+        // The listener for runShellButton has been removed
+        
         binding.darkModeToggle.setOnClickListener(v -> {
             boolean isCurrentlyDarkMode = sharedPreferences.getBoolean(DARK_MODE_KEY, false);
             if (isCurrentlyDarkMode) {
@@ -99,17 +99,16 @@ public class MainActivity extends AppCompatActivity {
 
             runOnUiThread(() -> {
                 if (hasRoot) {
-                    binding.statusText.setText("Root access granted ✓");
+                    binding.statusText.setText("Root Access ✓");
                     binding.backupButton.setEnabled(true);
                     binding.restoreDefaultButton.setEnabled(true);
                     binding.loadButton.setEnabled(true);
-                    binding.runShellButton.setEnabled(true);
+                    // The runShellButton is no longer referenced
                     binding.restartSystemUIButton.setEnabled(true);
                     logToUi("Root access granted with --mount-master.");
                     checkSelinuxStatus();
-                    checkSelinuxContext();
                 } else {
-                    binding.statusText.setText("Root access denied ✗");
+                    binding.statusText.setText("Root Access ✗");
                     Toast.makeText(this, "Root access is required for this app to function",
                             Toast.LENGTH_LONG).show();
                     logToUi("Root access denied.");
@@ -197,25 +196,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
-    private void runShellCommand() {
-        String command = binding.commandEditText.getText().toString().trim();
-        if (command.isEmpty()) {
-            Toast.makeText(this, "Please enter a command", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        logToUi("Executing: " + command);
-        new Thread(() -> {
-            String output = RootShell.executeCommand(command);
-            runOnUiThread(() -> {
-                binding.logTextView.append("Output:\n" + output + "\n");
-                binding.logScrollView.fullScroll(View.FOCUS_DOWN);
-            });
-        }).start();
-    }
+    // The runShellCommand() method has been completely removed.
 
     private void checkSelinuxStatus() {
-        logToUi("Checking SELinux status...");
         new Thread(() -> {
             String output = RootShell.executeCommand("getenforce").trim();
             runOnUiThread(() -> {
@@ -226,18 +209,6 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     binding.selinuxStatusText.setText("SELinux: " + output + " ?");
                 }
-                logToUi("SELinux Status: " + output);
-            });
-        }).start();
-    }
-
-    private void checkSelinuxContext() {
-        logToUi("Checking SELinux context...");
-        new Thread(() -> {
-            String output = RootShell.executeCommand("id -Z").trim();
-            runOnUiThread(() -> {
-                binding.selinuxContextText.setText("Context: " + output);
-                logToUi("SELinux Context: " + output);
             });
         }).start();
     }
@@ -407,7 +378,6 @@ public class MainActivity extends AppCompatActivity {
                 fos.write(content.getBytes("UTF-8"));
                 fos.close();
 
-                // ## CALL THE NEW CLEANUP METHOD AFTER CREATING A BACKUP ##
                 pruneBackups();
 
                 runOnUiThread(() -> {
@@ -433,7 +403,6 @@ public class MainActivity extends AppCompatActivity {
         File[] backupFiles = backupDir.listFiles((dir, name) -> name.endsWith(".xml"));
 
         if (backupFiles != null && backupFiles.length > MAX_BACKUPS) {
-            // Sort files by date, oldest first
             Arrays.sort(backupFiles, Comparator.comparingLong(File::lastModified));
 
             int filesToDeleteCount = backupFiles.length - MAX_BACKUPS;

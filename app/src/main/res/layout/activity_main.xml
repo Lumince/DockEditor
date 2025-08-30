@@ -154,7 +154,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:text="Created by @Lumince\nThanks to @lexd0g for info on XML"
+        android:text="Created by @Lumince\nThanks to @lexd0g for info on the XML file."
         android:textSize="12sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"

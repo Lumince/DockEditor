@@ -46,8 +46,7 @@ public class EditPinnedActivity extends AppCompatActivity {
         setupButtons();
         updateAddButtonState();
     }
-    
-    // Add this method to handle the back arrow
+
     @Override
     public boolean onSupportNavigateUp() {
         onBackPressed();
@@ -55,15 +54,14 @@ public class EditPinnedActivity extends AppCompatActivity {
     }
 
     private void setupRecyclerView() {
-        adapter = new AppListAdapter(appList, 
-            viewHolder -> itemTouchHelper.startDrag(viewHolder), // Start drag listener
-            this::onAppClick, 
+        adapter = new AppListAdapter(appList,
+            viewHolder -> itemTouchHelper.startDrag(viewHolder),
+            this::onAppClick,
             this::onAppRemove);
-        
+
         binding.appsRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         binding.appsRecyclerView.setAdapter(adapter);
 
-        // Setup ItemTouchHelper
         ItemTouchHelper.Callback callback = new ItemTouchHelper.SimpleCallback(
                 ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
             @Override
@@ -79,7 +77,7 @@ public class EditPinnedActivity extends AppCompatActivity {
                 // Not used
             }
         };
-        
+
         itemTouchHelper = new ItemTouchHelper(callback);
         itemTouchHelper.attachToRecyclerView(binding.appsRecyclerView);
     }
@@ -98,21 +96,49 @@ public class EditPinnedActivity extends AppCompatActivity {
     private void saveChanges() {
         new Thread(() -> {
             try {
+                // First, create the JSONArray as before to ensure data is correct
                 JSONArray newAppsArray = new JSONArray();
                 for (AppInfo app : appList) {
-                    JSONObject appObj = new JSONObject();
+                    JSONObject appObj = new JSONObject(app.originalJsonString);
                     appObj.put("packageName", app.packageName);
-                    appObj.put("type", app.type);
-                    appObj.put("platformName", app.platformName);
-                    if (app.activity != null && !app.activity.isEmpty()) {
-                        appObj.put("activity", app.activity);
+                    JSONObject appPanelData = appObj.optJSONObject("appPanelData");
+                    if (appPanelData == null) {
+                        appPanelData = new JSONObject();
                     }
+                    if (app.componentName != null && !app.componentName.isEmpty()) {
+                        appPanelData.put("componentName", app.componentName);
+                    } else {
+                        appPanelData.remove("componentName");
+                    }
+                    appObj.put("appPanelData", appPanelData);
+                    appObj.remove("activity");
                     newAppsArray.put(appObj);
                 }
 
-                String encodedJson = newAppsArray.toString()
-                        .replace("\"", "&quot;")
-                        .replace("&", "&amp;");
+                // ** NEW LOGIC: Manually build the string to control spacing **
+                StringBuilder jsonBuilder = new StringBuilder("[");
+                for (int i = 0; i < newAppsArray.length(); i++) {
+                    // Get the string for the current app object
+                    String appString = newAppsArray.getJSONObject(i).toString();
+                    jsonBuilder.append(appString);
+
+                    // Append the correct, inconsistent separator
+                    if (i < newAppsArray.length() - 1) {
+                        if (i == newAppsArray.length() - 2) {
+                            // This is the separator between the 2nd to last and last item
+                            jsonBuilder.append(" ,");
+                        } else {
+                            jsonBuilder.append(", ");
+                        }
+                    }
+                }
+                jsonBuilder.append("]");
+
+                String finalJsonString = jsonBuilder.toString();
+
+                String encodedJson = finalJsonString
+                        .replace("\\/", "/") // Un-escape slashes
+                        .replace("\"", "&quot;"); // Escape quotes for XML
 
                 String newXmlContent = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
                         "<map>\n" +
@@ -193,7 +219,12 @@ public class EditPinnedActivity extends AppCompatActivity {
                     updateAddButtonState();
                 }
             } else {
-                appList.set(editPosition, newAppInfo);
+                AppInfo existingApp = appList.get(editPosition);
+                existingApp.packageName = newAppInfo.packageName;
+                existingApp.activity = newAppInfo.activity;
+                existingApp.componentName = newAppInfo.componentName;
+                existingApp.originalJsonString = newAppInfo.originalJsonString;
+
                 adapter.notifyItemChanged(editPosition);
             }
             binding.saveButton.setEnabled(true);

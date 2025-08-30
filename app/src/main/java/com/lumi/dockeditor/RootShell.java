@@ -12,27 +12,21 @@ public class RootShell {
     private static Process rootProcess;
     private static DataOutputStream rootOutput;
     private static BufferedReader rootStdout;
-    private static BufferedReader rootStderr; // This is now unused but kept for structure
+    private static BufferedReader rootStderr;
 
     private static String lastCommandOutput = "";
 
-    /**
-     * Initializes a persistent root shell.
-     * Call this before running any commands.
-     * @param suCommand The command to use for obtaining root, e.g., "su" or "su --mount-master".
-     */
     public static boolean initRootShell(String suCommand) {
-        if (rootProcess != null) return true; // already initialized
+        if (rootProcess != null) return true;
         try {
             rootProcess = Runtime.getRuntime().exec(suCommand);
             rootOutput = new DataOutputStream(rootProcess.getOutputStream());
             rootStdout = new BufferedReader(new InputStreamReader(rootProcess.getInputStream()));
-            rootStderr = new BufferedReader(new InputStreamReader(rootProcess.getErrorStream())); // Still need to initialize it
+            rootStderr = new BufferedReader(new InputStreamReader(rootProcess.getErrorStream()));
 
-            // Verify root access by running "id"
             rootOutput.writeBytes("id\n");
             rootOutput.flush();
-            String line = rootStdout.readLine(); // Read initial output
+            String line = rootStdout.readLine();
             if (line != null && line.contains("uid=0")) {
                 return true;
             } else {
@@ -46,9 +40,6 @@ public class RootShell {
         }
     }
 
-    /**
-     * Shuts down the persistent root shell.
-     */
     public static void shutdown() {
         if (rootProcess != null) {
             try {
@@ -58,47 +49,32 @@ public class RootShell {
                 rootStdout.close();
                 rootStderr.close();
                 rootProcess.waitFor();
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // Restore the interrupted status
+            } catch (IOException | InterruptedException e) {
+                Thread.currentThread().interrupt();
             } finally {
                 rootProcess.destroy();
                 rootProcess = null;
-                rootOutput = null;
-                rootStdout = null;
-                rootStderr = null;
             }
         }
     }
 
-    /**
-     * Executes a single command in the persistent root shell.
-     * Returns the output from stdout and stderr.
-     */
     public static String executeCommand(String command) {
         List<String> commands = new ArrayList<>();
         commands.add(command);
         return executeCommands(commands);
     }
 
-    /**
-     * Executes multiple commands in the same persistent root shell session.
-     * Returns the aggregated output from stdout and stderr.
-     */
     public static String executeCommands(List<String> commands) {
         if (rootProcess == null || rootOutput == null || rootStdout == null) {
-            lastCommandOutput = "Root shell not initialized or streams are null.";
+            lastCommandOutput = "Root shell not initialized.";
             return lastCommandOutput;
         }
 
         StringBuilder output = new StringBuilder();
         try {
             for (String command : commands) {
-                // **THE FIX IS HERE**: Append " 2>&1" to merge stderr into stdout
                 rootOutput.writeBytes(command + " 2>&1\n");
             }
-            // Add a unique marker to indicate the end of command output
             rootOutput.writeBytes("echo --END_OF_COMMAND--\n");
             rootOutput.flush();
 
@@ -109,9 +85,6 @@ public class RootShell {
                 }
                 output.append(line).append("\n");
             }
-
-            // The stderr stream is now merged, so we don't need to read it separately.
-
             lastCommandOutput = output.toString();
             return lastCommandOutput;
         } catch (IOException e) {
@@ -120,9 +93,6 @@ public class RootShell {
         }
     }
     
-    /**
-     * Reads a file's contents with direct root access.
-     */
     public static String getFileContent(String filePath) {
         String command = "cat \"" + filePath + "\"";
         String result = executeCommand(command);
@@ -134,34 +104,30 @@ public class RootShell {
         return result != null ? result.trim() : null;
     }
     
-    /**
-     * Writes content to a file safely with direct root access.
-     */
     public static boolean writeFileContent(String filePath, String content) {
+        String contextResult = executeCommand("ls -Z \"" + filePath + "\"").trim();
+        String selinuxContext = null;
+        if (!contextResult.isEmpty() && !contextResult.contains("No such file or directory")) {
+            selinuxContext = contextResult.split("\\s+")[0];
+        }
+
         List<String> commands = new ArrayList<>();
         commands.add("printf '%s' '" + content.replace("'", "'\"'\"'") + "' > \"" + filePath + "\"");
-        commands.add("chmod 660 \"" + filePath + "\"");
+        
+        // ** THIS IS THE CORRECTED LINE **
+        commands.add("chmod 666 \"" + filePath + "\"");
+        
         commands.add("chown system:system \"" + filePath + "\"");
+
+        if (selinuxContext != null && !selinuxContext.contains("?")) {
+            commands.add("chcon '" + selinuxContext + "' \"" + filePath + "\"");
+        }
+
         String result = executeCommands(commands);
 
-        if (result != null && (result.contains("Permission denied") || result.contains("No such file or directory"))) {
-            lastCommandOutput = result;
-            return false;
-        }
-        return true;
+        return result == null || (!result.contains("Permission denied") && !result.contains("No such file or directory"));
     }
 
-    /**
-     * Copy file from one location to another
-     */
-    public static boolean copyFile(String sourcePath, String destPath) {
-        String result = executeCommand("cp \"" + sourcePath + "\" \"" + destPath + "\"");
-        return result != null && !result.contains("Permission denied") && !result.contains("No such file or directory");
-    }
-
-    /**
-     * Returns the output of the last executed command.
-     */
     public static String getLastCommandOutput() {
         return lastCommandOutput;
     }

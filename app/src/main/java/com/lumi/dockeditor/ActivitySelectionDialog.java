@@ -5,7 +5,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -15,6 +14,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
+import java.util.Collections; // ** THIS LINE IS THE FIX **
 import java.util.List;
 
 public class ActivitySelectionDialog {
@@ -37,13 +37,17 @@ public class ActivitySelectionDialog {
         
         RecyclerView recyclerView = new RecyclerView(context);
         recyclerView.setLayoutManager(new LinearLayoutManager(context));
-        recyclerView.setAdapter(new ActivitySelectionAdapter(activities, listener));
         
-        new AlertDialog.Builder(context)
+        ActivitySelectionAdapter adapter = new ActivitySelectionAdapter(activities, listener);
+        recyclerView.setAdapter(adapter);
+        
+        AlertDialog dialog = new AlertDialog.Builder(context)
             .setTitle("Select Activity for " + selectedApp.appName)
             .setView(recyclerView)
             .setNegativeButton("Cancel", null)
             .show();
+            
+        adapter.setDialog(dialog);
     }
     
     private List<com.lumi.dockeditor.ActivityInfo> getAppActivities() {
@@ -51,50 +55,30 @@ public class ActivitySelectionDialog {
         PackageManager pm = context.getPackageManager();
         
         try {
-            // Get main launcher activity
             Intent mainIntent = pm.getLaunchIntentForPackage(selectedApp.packageName);
-            if (mainIntent != null) {
-                String mainActivity = mainIntent.getComponent().getClassName();
-                activities.add(new com.lumi.dockeditor.ActivityInfo(
-                    mainActivity, 
-                    "Main Activity", 
-                    true
-                ));
-            }
-            
-            // Get all activities for this package
+            String mainActivityClassName = (mainIntent != null && mainIntent.getComponent() != null) ? mainIntent.getComponent().getClassName() : null;
+
             android.content.pm.PackageInfo packageInfo = pm.getPackageInfo(selectedApp.packageName, PackageManager.GET_ACTIVITIES);
             if (packageInfo.activities != null) {
                 for (ActivityInfo activityInfo : packageInfo.activities) {
-                    if (activityInfo.exported) { // Only exported activities
+                    if (activityInfo.exported) { 
                         String activityName = activityInfo.name;
                         String displayName = activityName.substring(activityName.lastIndexOf('.') + 1);
+                        boolean isMain = activityName.equals(mainActivityClassName);
                         
-                        // Don't duplicate the main activity
-                        boolean isMain = mainIntent != null && 
-                                        activityName.equals(mainIntent.getComponent().getClassName());
-                        
-                        if (!isMain) {
-                            activities.add(new com.lumi.dockeditor.ActivityInfo(
-                                activityName,
-                                displayName,
-                                false
-                            ));
-                        }
+                        activities.add(new com.lumi.dockeditor.ActivityInfo(
+                            activityName,
+                            displayName,
+                            isMain
+                        ));
                     }
                 }
             }
             
         } catch (PackageManager.NameNotFoundException e) {
-            // If we can't get activities, just add a default option
-            activities.add(new com.lumi.dockeditor.ActivityInfo(
-                "",
-                "Default Activity",
-                true
-            ));
+            // Handle error
         }
         
-        // If no activities found, add default
         if (activities.isEmpty()) {
             activities.add(new com.lumi.dockeditor.ActivityInfo(
                 "",
@@ -103,16 +87,23 @@ public class ActivitySelectionDialog {
             ));
         }
         
+        Collections.sort(activities, (a, b) -> Boolean.compare(b.isMainActivity, a.isMainActivity));
+        
         return activities;
     }
     
     private static class ActivitySelectionAdapter extends RecyclerView.Adapter<ActivitySelectionAdapter.ViewHolder> {
         private List<com.lumi.dockeditor.ActivityInfo> activities;
         private OnActivitySelectedListener listener;
+        private Dialog dialog;
         
         public ActivitySelectionAdapter(List<com.lumi.dockeditor.ActivityInfo> activities, OnActivitySelectedListener listener) {
             this.activities = activities;
             this.listener = listener;
+        }
+        
+        public void setDialog(Dialog dialog) {
+            this.dialog = dialog;
         }
         
         @NonNull
@@ -132,6 +123,9 @@ public class ActivitySelectionDialog {
             holder.itemView.setOnClickListener(v -> {
                 if (listener != null) {
                     listener.onActivitySelected(activity);
+                }
+                if (dialog != null) {
+                    dialog.dismiss();
                 }
             });
         }

@@ -2,7 +2,6 @@ package com.lumi.dockeditor;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.Environment;
 import android.view.View;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
@@ -17,7 +16,6 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
@@ -37,6 +35,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The incorrect line below has been removed.
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         
@@ -47,7 +46,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Shutdown the persistent root shell when the activity is destroyed
         RootShell.shutdown();
     }
     
@@ -65,7 +63,6 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             boolean hasRoot = RootShell.initRootShell("su --mount-master");
 
-            // **CHANGE IS HERE**: Backup is now created on the background thread after root is confirmed.
             if (hasRoot) {
                 logToUi("Root access granted. Creating automatic startup backup...");
                 backupFileInternal();
@@ -81,8 +78,6 @@ public class MainActivity extends AppCompatActivity {
                     logToUi("Root access granted with --mount-master.");
                     checkSelinuxStatus();
                     checkSelinuxContext();
-                    // The backup check is now called from within backupFileInternal,
-                    // so we don't need to call it here again.
                 } else {
                     binding.statusText.setText("Root access denied ✗");
                     Toast.makeText(this, "Root access is required for this app to function",
@@ -97,7 +92,6 @@ public class MainActivity extends AppCompatActivity {
         logToUi("Loading and parsing file...");
         new Thread(() -> {
             try {
-                // **CHANGE IS HERE**: The automatic backup call has been removed from this method.
                 logToUi("Reading content from target file " + TARGET_FILE + "...");
 
                 String content = RootShell.getFileContent(TARGET_FILE);
@@ -145,12 +139,7 @@ public class MainActivity extends AppCompatActivity {
 
             for (int i = 0; i < appsArray.length(); i++) {
                 JSONObject appObj = appsArray.getJSONObject(i);
-                String packageName = appObj.getString("packageName");
-                String type = appObj.getString("type");
-                String platformName = appObj.getString("platformName");
-                String activity = appObj.optString("activity", "");
-
-                localAppList.add(new AppInfo(packageName, type, platformName, activity));
+                localAppList.add(new AppInfo(appObj.toString()));
             }
             return localAppList;
 
@@ -207,7 +196,6 @@ public class MainActivity extends AppCompatActivity {
             });
         }).start();
     }
-
 
     private void checkForExistingBackups() {
         logToUi("Checking for existing backups...");
@@ -414,8 +402,6 @@ public class MainActivity extends AppCompatActivity {
             fos.write(content.getBytes("UTF-8"));
             fos.close();
             logToUi("Internal backup created: " + backupFileName);
-            // This is called from a background thread, so we need to switch to the UI thread
-            // to update the backup button's text and state.
             runOnUiThread(this::checkForExistingBackups);
         } catch (Exception e) {
             logToUi("Internal backup error: " + e.getMessage());

@@ -71,52 +71,59 @@ public class RootShell {
         }
 
         StringBuilder output = new StringBuilder();
+        final String END_MARKER = "--END_OF_COMMAND--";
+
         try {
             for (String command : commands) {
                 rootOutput.writeBytes(command + " 2>&1\n");
             }
-            rootOutput.writeBytes("echo --END_OF_COMMAND--\n");
+            rootOutput.writeBytes("echo " + END_MARKER + "\n");
             rootOutput.flush();
 
             String line;
+            // ** THIS IS THE NEW, ROBUST READING LOGIC **
             while ((line = rootStdout.readLine()) != null) {
-                if (line.contains("--END_OF_COMMAND--")) {
-                    break;
+                if (line.contains(END_MARKER)) {
+                    // Check if there's content on the same line before the marker
+                    int markerIndex = line.indexOf(END_MARKER);
+                    if (markerIndex > 0) {
+                        output.append(line.substring(0, markerIndex));
+                    }
+                    break; // Exit the loop
                 }
                 output.append(line).append("\n");
             }
+
             lastCommandOutput = output.toString();
             return lastCommandOutput;
+
         } catch (IOException e) {
             lastCommandOutput = "Exception in executeCommands: " + e.getMessage();
             return lastCommandOutput;
         }
     }
-    
+
     public static String getFileContent(String filePath) {
         String command = "cat \"" + filePath + "\"";
         String result = executeCommand(command);
-        
-        if (result != null && (result.contains("Permission denied") || result.contains("No such file or directory") || result.trim().isEmpty())) {
-            lastCommandOutput = result; 
+
+        if (result == null || result.trim().isEmpty() || result.contains("Permission denied") || result.contains("No such file or directory")) {
+            lastCommandOutput = result;
             return null;
         }
-        return result != null ? result.trim() : null;
+        return result;
     }
-    
+
     public static boolean writeFileContent(String filePath, String content) {
-        String contextResult = executeCommand("ls -Z \"" + filePath + "\"").trim();
+        String contextResult = executeCommand("ls -Z \"" + filePath + "\"");
         String selinuxContext = null;
-        if (!contextResult.isEmpty() && !contextResult.contains("No such file or directory")) {
-            selinuxContext = contextResult.split("\\s+")[0];
+        if (contextResult != null && !contextResult.trim().isEmpty() && !contextResult.contains("No such file or directory")) {
+            selinuxContext = contextResult.trim().split("\\s+")[0];
         }
 
         List<String> commands = new ArrayList<>();
         commands.add("printf '%s' '" + content.replace("'", "'\"'\"'") + "' > \"" + filePath + "\"");
-        
-        // ** THIS IS THE CORRECTED LINE **
         commands.add("chmod 666 \"" + filePath + "\"");
-        
         commands.add("chown system:system \"" + filePath + "\"");
 
         if (selinuxContext != null && !selinuxContext.contains("?")) {

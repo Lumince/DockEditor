@@ -18,6 +18,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays; // <-- New import
+import java.util.Comparator; // <-- New import
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -31,6 +33,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml";
     private static final String BACKUP_SUBDIR = "backups";
     
+    private static final int MAX_BACKUPS = 3;
+    
     private static final String DEFAULT_AUI_PREFERENCES =
             "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n" +
             "<map>\n" +
@@ -43,7 +47,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // ## APPLY THEME ON STARTUP (must be before setContentView) ##
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         boolean isDarkMode = sharedPreferences.getBoolean(DARK_MODE_KEY, false);
         if (isDarkMode) {
@@ -73,7 +76,6 @@ public class MainActivity extends AppCompatActivity {
         binding.runShellButton.setOnClickListener(v -> runShellCommand());
         binding.restartSystemUIButton.setOnClickListener(v -> showRestartSystemUIDialog());
 
-        // ## ADD LISTENER FOR THE NEW TOGGLE BUTTON ##
         binding.darkModeToggle.setOnClickListener(v -> {
             boolean isCurrentlyDarkMode = sharedPreferences.getBoolean(DARK_MODE_KEY, false);
             if (isCurrentlyDarkMode) {
@@ -92,8 +94,7 @@ public class MainActivity extends AppCompatActivity {
             boolean hasRoot = RootShell.initRootShell("su --mount-master");
 
             if (hasRoot) {
-                logToUi("Root access granted. Creating automatic startup backup...");
-                backupFileInternal();
+                runOnUiThread(this::checkForExistingBackups);
             }
 
             runOnUiThread(() -> {
@@ -385,7 +386,6 @@ public class MainActivity extends AppCompatActivity {
         logToUi("Starting backup process...");
         new Thread(() -> {
             try {
-                logToUi("Reading content from target file " + TARGET_FILE + "...");
                 String content = RootShell.getFileContent(TARGET_FILE);
                 if (content == null) {
                     runOnUiThread(() -> Toast.makeText(this, "Backup failed: Could not read original file.", Toast.LENGTH_SHORT).show());
@@ -395,19 +395,20 @@ public class MainActivity extends AppCompatActivity {
 
                 File backupDir = new File(getCacheDir(), BACKUP_SUBDIR);
                 if (!backupDir.exists()) {
-                    logToUi("Creating backup directory...");
                     backupDir.mkdirs();
                 }
 
-                String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                        .format(new Date());
+                String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
                 String backupFileName = "AUI_PREFERENCES_" + timestamp + ".xml";
                 File backupFile = new File(backupDir, backupFileName);
+                
                 logToUi("Saving backup to " + backupFile.getAbsolutePath());
-
                 FileOutputStream fos = new FileOutputStream(backupFile);
                 fos.write(content.getBytes("UTF-8"));
                 fos.close();
+
+                // ## CALL THE NEW CLEANUP METHOD AFTER CREATING A BACKUP ##
+                pruneBackups();
 
                 runOnUiThread(() -> {
                     Toast.makeText(this, "Backup created: " + backupFileName, Toast.LENGTH_LONG).show();
@@ -423,35 +424,31 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    private void pruneBackups() {
+        File backupDir = new File(getCacheDir(), BACKUP_SUBDIR);
+        if (!backupDir.exists()) {
+            return;
+        }
 
-    private void backupFileInternal() {
-        try {
-            String content = RootShell.getFileContent(TARGET_FILE);
-            if (content == null) {
-                logToUi("Internal backup failed: Could not read original file. Output: " + RootShell.getLastCommandOutput());
-                return;
+        File[] backupFiles = backupDir.listFiles((dir, name) -> name.endsWith(".xml"));
+
+        if (backupFiles != null && backupFiles.length > MAX_BACKUPS) {
+            // Sort files by date, oldest first
+            Arrays.sort(backupFiles, Comparator.comparingLong(File::lastModified));
+
+            int filesToDeleteCount = backupFiles.length - MAX_BACKUPS;
+            logToUi("Backup limit exceeded. Deleting " + filesToDeleteCount + " oldest backup(s)...");
+
+            for (int i = 0; i < filesToDeleteCount; i++) {
+                File oldestFile = backupFiles[i];
+                if (oldestFile.delete()) {
+                    logToUi("Deleted old backup: " + oldestFile.getName());
+                } else {
+                    logToUi("Failed to delete old backup: " + oldestFile.getName());
+                }
             }
-
-            File backupDir = new File(getCacheDir(), BACKUP_SUBDIR);
-            if (!backupDir.exists()) {
-                backupDir.mkdirs();
-            }
-
-            String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                    .format(new Date());
-            String backupFileName = "AUI_PREFERENCES_" + timestamp + ".xml";
-            File backupFile = new File(backupDir, backupFileName);
-
-            FileOutputStream fos = new FileOutputStream(backupFile);
-            fos.write(content.getBytes("UTF-8"));
-            fos.close();
-            logToUi("Internal backup created: " + backupFileName);
-            runOnUiThread(this::checkForExistingBackups);
-        } catch (Exception e) {
-            logToUi("Internal backup error: " + e.getMessage());
         }
     }
-
 
     private String readFileContent(File file) throws IOException {
         FileInputStream fis = new FileInputStream(file);

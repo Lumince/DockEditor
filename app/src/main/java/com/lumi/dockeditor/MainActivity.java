@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
@@ -35,7 +36,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // The incorrect line below has been removed.
+        // The incorrect App.setContext() line has been removed from here.
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         
@@ -54,8 +55,8 @@ public class MainActivity extends AppCompatActivity {
         binding.backupButton.setOnClickListener(v -> backupFile());
         binding.restoreBackupButton.setOnClickListener(v -> showRestoreBackupDialog());
         binding.restoreDefaultButton.setOnClickListener(v -> showRestoreDefaultDialog());
-        
         binding.runShellButton.setOnClickListener(v -> runShellCommand());
+        binding.restartSystemUIButton.setOnClickListener(v -> showRestartSystemUIDialog());
     }
 
     private void checkRootAccess() {
@@ -75,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
                     binding.restoreDefaultButton.setEnabled(true);
                     binding.loadButton.setEnabled(true);
                     binding.runShellButton.setEnabled(true);
+                    binding.restartSystemUIButton.setEnabled(true);
                     logToUi("Root access granted with --mount-master.");
                     checkSelinuxStatus();
                     checkSelinuxContext();
@@ -87,6 +89,21 @@ public class MainActivity extends AppCompatActivity {
             });
         }).start();
     }
+
+    private void showRestartSystemUIDialog() {
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Restart SystemUX?")
+                .setMessage("This will force restart SystemUX, applying the changes that you have made.")
+                .setPositiveButton("Restart", (dialog, which) -> {
+                    logToUi("Executing: am force-stop com.oculus.systemux");
+                    Toast.makeText(this, "Restarting SystemUI...", Toast.LENGTH_SHORT).show();
+                    new Thread(() -> {
+                        RootShell.executeCommand("am force-stop com.oculus.systemux");
+                    }).start();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
     
     private void loadAndParseFile() {
         logToUi("Loading and parsing file...");
@@ -95,7 +112,7 @@ public class MainActivity extends AppCompatActivity {
                 logToUi("Reading content from target file " + TARGET_FILE + "...");
 
                 String content = RootShell.getFileContent(TARGET_FILE);
-                if (content == null || content.trim().isEmpty()) {
+                if (content == null) {
                     runOnUiThread(() -> Toast.makeText(this, "Failed to read original file", Toast.LENGTH_SHORT).show());
                     logToUi("Failed to read original file. Output: " + RootShell.getLastCommandOutput());
                     return;
@@ -343,7 +360,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 logToUi("Reading content from target file " + TARGET_FILE + "...");
                 String content = RootShell.getFileContent(TARGET_FILE);
-                if (content == null || content.trim().isEmpty()) {
+                if (content == null) {
                     runOnUiThread(() -> Toast.makeText(this, "Backup failed: Could not read original file.", Toast.LENGTH_SHORT).show());
                     logToUi("Backup failed: Could not read original file. Output: " + RootShell.getLastCommandOutput());
                     return;
@@ -383,7 +400,7 @@ public class MainActivity extends AppCompatActivity {
     private void backupFileInternal() {
         try {
             String content = RootShell.getFileContent(TARGET_FILE);
-            if (content == null || content.trim().isEmpty()) {
+            if (content == null) {
                 logToUi("Internal backup failed: Could not read original file. Output: " + RootShell.getLastCommandOutput());
                 return;
             }
@@ -412,8 +429,13 @@ public class MainActivity extends AppCompatActivity {
     private String readFileContent(File file) throws IOException {
         FileInputStream fis = new FileInputStream(file);
         byte[] data = new byte[(int) file.length()];
-        fis.read(data);
+        int bytesRead = fis.read(data);
         fis.close();
+        if (bytesRead < data.length) {
+            byte[] actualData = new byte[bytesRead];
+            System.arraycopy(data, 0, actualData, 0, bytesRead);
+            return new String(actualData, "UTF-8");
+        }
         return new String(data, "UTF-8");
     }
 

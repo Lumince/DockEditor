@@ -7,6 +7,18 @@
     android:padding="16dp"
     tools:context=".MainActivity">
 
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Dock Editor v0.1.2"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <ImageButton
         android:id="@+id/darkModeToggle"
         android:layout_width="48dp"
@@ -15,17 +27,18 @@
         android:contentDescription="Toggle Dark Mode"
         android:src="@drawable/ic_dark_mode"
         app:tint="?attr/darkModeIconColor"
+        app:layout_constraintBottom_toBottomOf="@+id/titleText"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="@+id/titleText" />
 
     <ScrollView
         android:id="@+id/contentScrollView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@id/shellLayout"
+        app:layout_constraintBottom_toTopOf="@id/logScrollView"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/darkModeToggle">
+        app:layout_constraintTop_toBottomOf="@+id/titleText">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -36,9 +49,8 @@
                 android:id="@+id/statusText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
                 android:gravity="center"
-                android:text="Checking root access..."
+                android:text="Checking Root Access..."
                 android:textSize="16sp" />
 
             <TextView
@@ -46,15 +58,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:text="Checking SELinux status..."
-                android:textSize="16sp" />
-
-            <TextView
-                android:id="@+id/selinuxContextText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="Checking SELinux context..."
+                android:text="Checking SELinux Status..."
                 android:textSize="16sp" />
 
             <LinearLayout
@@ -67,16 +71,17 @@
                 <Button
                     android:id="@+id/loadButton"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="62dp"
                     android:layout_marginEnd="8dp"
                     android:layout_weight="1"
                     android:enabled="false"
-                    android:text="Load Configuration" />
+                    android:text="Edit Pinned Apps" />
 
                 <Button
                     android:id="@+id/backupButton"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="8dp"
                     android:layout_weight="1"
                     android:enabled="false"
                     android:text="Backup File" />
@@ -93,7 +98,7 @@
                 <Button
                     android:id="@+id/restoreBackupButton"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:layout_marginEnd="8dp"
                     android:layout_weight="1"
                     android:enabled="false"
@@ -102,7 +107,8 @@
                 <Button
                     android:id="@+id/restoreDefaultButton"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="8dp"
                     android:layout_weight="1"
                     android:enabled="false"
                     android:text="Restore Default" />
@@ -114,48 +120,24 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:enabled="false"
+                android:minHeight="60dp"
                 android:text="Restart SystemUX (Apply Changes)" />
 
         </LinearLayout>
     </ScrollView>
 
-    <LinearLayout
-        android:id="@+id/shellLayout"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:orientation="horizontal"
-        app:layout_constraintBottom_toTopOf="@+id/logScrollView"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
-
-        <EditText
-            android:id="@+id/commandEditText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="Enter shell command"
-            android:inputType="text"
-            android:maxLines="1"
-            android:textSize="14sp" />
-
-        <Button
-            android:id="@+id/runShellButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:enabled="false"
-            android:text="Run" />
-    </LinearLayout>
-
     <ScrollView
         android:id="@+id/logScrollView"
         android:layout_width="0dp"
-        android:layout_height="120dp"
+        android:layout_height="212dp"
+        android:layout_marginTop="16dp"
         android:background="#1C1C1C"
         android:padding="8dp"
         app:layout_constraintBottom_toTopOf="@id/attributionText"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent">
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/contentScrollView"
+        app:layout_constraintVertical_bias="1.0">
 
         <TextView
             android:id="@+id/logTextView"
@@ -171,23 +153,11 @@
         android:id="@+id/attributionText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
         android:gravity="center"
-        android:text="Created by Lumince\nDock App Editor\nThanks to @lexd0g for info on XML"
+        android:text="Created by @Lumince\nThanks to @lexd0g for info on XML"
         android:textSize="12sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
-
-    <TextView
-        android:id="@+id/titleText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:text="Dock Editor v0.1.2"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        tools:layout_editor_absoluteX="18dp"
-        tools:layout_editor_absoluteY="28dp" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

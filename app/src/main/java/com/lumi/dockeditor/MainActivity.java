@@ -1,10 +1,13 @@
 package com.lumi.dockeditor;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate;
 import com.lumi.dockeditor.databinding.ActivityMainBinding;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -21,6 +24,9 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
+    private SharedPreferences sharedPreferences;
+    private static final String PREFS_NAME = "DockEditorPrefs";
+    private static final String DARK_MODE_KEY = "darkModeEnabled";
     
     private static final String TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml";
     private static final String BACKUP_SUBDIR = "backups";
@@ -36,7 +42,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // The incorrect App.setContext() line has been removed from here.
+
+        // ## APPLY THEME ON STARTUP (must be before setContentView) ##
+        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        boolean isDarkMode = sharedPreferences.getBoolean(DARK_MODE_KEY, false);
+        if (isDarkMode) {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+        } else {
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+        }
+
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         
@@ -57,6 +72,18 @@ public class MainActivity extends AppCompatActivity {
         binding.restoreDefaultButton.setOnClickListener(v -> showRestoreDefaultDialog());
         binding.runShellButton.setOnClickListener(v -> runShellCommand());
         binding.restartSystemUIButton.setOnClickListener(v -> showRestartSystemUIDialog());
+
+        // ## ADD LISTENER FOR THE NEW TOGGLE BUTTON ##
+        binding.darkModeToggle.setOnClickListener(v -> {
+            boolean isCurrentlyDarkMode = sharedPreferences.getBoolean(DARK_MODE_KEY, false);
+            if (isCurrentlyDarkMode) {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+                sharedPreferences.edit().putBoolean(DARK_MODE_KEY, false).apply();
+            } else {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+                sharedPreferences.edit().putBoolean(DARK_MODE_KEY, true).apply();
+            }
+        });
     }
 
     private void checkRootAccess() {

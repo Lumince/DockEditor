@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Dock Editor"
-include ':app'
+include(":app")

@@ -3,6 +3,7 @@ package com.lumi.dockeditor
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.IntentCompat
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -31,7 +32,12 @@ class EditPinnedActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
         // Retrieve the app list from intent
-        val list = intent.getParcelableArrayListExtra<AppInfo>("appList")
+        val list = IntentCompat.getParcelableArrayListExtra(
+            intent,
+            "appList",
+            AppInfo::class.java
+        )
+
         if (list == null) {
             appList = mutableListOf()
             Toast.makeText(this, "Error: Could not load app list.", Toast.LENGTH_LONG).show()
@@ -79,8 +85,8 @@ class EditPinnedActivity : AppCompatActivity() {
                 viewHolder: RecyclerView.ViewHolder,
                 target: RecyclerView.ViewHolder
             ): Boolean {
-                val fromPosition = viewHolder.adapterPosition
-                val toPosition = target.adapterPosition
+                val fromPosition = viewHolder.bindingAdapterPosition
+                val toPosition = target.bindingAdapterPosition
                 onAppReorder(fromPosition, toPosition)
                 return true
             }

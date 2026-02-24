@@ -70,7 +70,7 @@ class AppListAdapter(
 
             // Item click to edit the app
             itemView.setOnClickListener {
-                val position = adapterPosition
+                val position = bindingAdapterPosition
                 if (position != RecyclerView.NO_POSITION) {
                     clickListener?.onItemClick(position)
                 }
@@ -78,7 +78,7 @@ class AppListAdapter(
 
             // Click to remove app from the list
             removeButton.setOnClickListener {
-                val position = adapterPosition
+                val position = bindingAdapterPosition
                 if (position != RecyclerView.NO_POSITION) {
                     removeListener?.onItemRemove(position)
                 }

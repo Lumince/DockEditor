@@ -11,6 +11,7 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+	<uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
         android:name=".App"
@@ -40,7 +41,12 @@
             android:exported="false"
             android:label="Edit Pinned Apps"
             android:parentActivityName=".MainActivity">
-            </activity>
+        </activity>
+
+        <activity
+            android:name=".AppSelectionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.DockEditor" />
 
     </application>
 

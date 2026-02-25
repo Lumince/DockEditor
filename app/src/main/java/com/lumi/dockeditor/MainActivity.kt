@@ -2,35 +2,39 @@ package com.lumi.dockeditor
 
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
-import android.view.View
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
-import com.lumi.dockeditor.databinding.ActivityMainBinding
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.concurrent.thread
 import org.json.JSONArray
 import org.json.JSONException
-import org.json.JSONObject
-import java.io.File
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlin.concurrent.thread
 
-class MainActivity : AppCompatActivity() {
-    private lateinit var binding: ActivityMainBinding
-    private lateinit var sharedPreferences: SharedPreferences
+class MainActivity : ComponentActivity() {
 
     companion object {
-        private const val PREFS_NAME = "DockEditorPrefs"
-        private const val DARK_MODE_KEY = "darkModeEnabled"
         private const val TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml"
         private const val BACKUP_SUBDIR = "backups"
         private const val MAX_BACKUPS = 3
-
         private const val DEFAULT_AUI_PREFERENCES = """
             <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
             <map>
@@ -42,19 +46,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContent {
+            val dynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            val colorScheme = if (dynamicColor) {
+                if (androidx.compose.foundation.isSystemInDarkTheme()) dynamicDarkColorScheme(LocalContext.current) 
+                else dynamicLightColorScheme(LocalContext.current)
+            } else {
+                if (androidx.compose.foundation.isSystemInDarkTheme()) darkColorScheme() 
+                else lightColorScheme()
+            }
 
-        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val isDarkMode = sharedPreferences.getBoolean(DARK_MODE_KEY, false)
-        
-        AppCompatDelegate.setDefaultNightMode(
-            if (isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
-        )
-
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        
-        setupButtons()
-        checkRootAccess()
+            MaterialTheme(colorScheme = colorScheme) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    DockEditorApp()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -62,325 +69,245 @@ class MainActivity : AppCompatActivity() {
         RootShell.shutdown()
     }
 
-    private fun setupButtons() {
-        binding.loadButton.setOnClickListener { loadAndParseFile() }
-        binding.backupButton.setOnClickListener { backupFile() }
-        binding.restoreBackupButton.setOnClickListener { showRestoreBackupDialog() }
-        binding.restoreDefaultButton.setOnClickListener { showRestoreDefaultDialog() }
-        binding.restartSystemUIButton.setOnClickListener { showRestartSystemUIDialog() }
+    @Composable
+    fun DockEditorApp() {
+        val context = LocalContext.current
+        val scrollState = rememberScrollState()
+        
+        // --- State ---
+        var consoleText by remember { mutableStateOf("Initializing...\n") }
+        var isRooted by remember { mutableStateOf(false) }
+        var selinuxStatus by remember { mutableStateOf("Checking...") }
+        var backupCount by remember { mutableStateOf(0) }
+        
+        // --- Dialog States ---
+        var showRestoreDefaultDialog by remember { mutableStateOf(false) }
+        var showRestoreBackupDialog by remember { mutableStateOf(false) }
 
-        binding.darkModeToggle.setOnClickListener {
-            val isCurrentlyDarkMode = sharedPreferences.getBoolean(DARK_MODE_KEY, false)
-            val newMode = !isCurrentlyDarkMode
-            
-            AppCompatDelegate.setDefaultNightMode(
-                if (newMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
-            )
-            sharedPreferences.edit().putBoolean(DARK_MODE_KEY, newMode).apply()
+        fun log(message: String) {
+            consoleText += "$message\n"
         }
-    }
 
-    private fun checkRootAccess() {
-        logToUi("Checking for root access...")
-        thread {
-            val hasRoot = RootShell.initRootShell("su --mount-master")
-
-            if (hasRoot) {
-                runOnUiThread { checkForExistingBackups() }
-            }
-
-            runOnUiThread {
+        // --- Logic Functions ---
+        fun checkRoot() {
+            log("Checking for root access...")
+            thread {
+                val hasRoot = RootShell.initRootShell("su --mount-master")
+                isRooted = hasRoot
                 if (hasRoot) {
-                    binding.statusText.text = "Root Access ✓"
-                    binding.backupButton.isEnabled = true
-                    binding.restoreDefaultButton.isEnabled = true
-                    binding.loadButton.isEnabled = true
-                    binding.restartSystemUIButton.isEnabled = true
-                    logToUi("Root access granted with --mount-master.")
-                    checkSelinuxStatus()
-                } else {
-                    binding.statusText.text = "Root Access ✗"
-                    Toast.makeText(this, "Root access is required for this app to function", Toast.LENGTH_LONG).show()
-                    logToUi("Root access denied.")
-                }
-            }
-        }
-    }
-
-    private fun showRestartSystemUIDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Restart SystemUX?")
-            .setMessage("This will force restart SystemUX, applying the changes that you have made.")
-            .setPositiveButton("Restart") { _, _ ->
-                logToUi("Executing: am force-stop com.oculus.systemux")
-                Toast.makeText(this, "Restarting SystemUI...", Toast.LENGTH_SHORT).show()
-                thread {
-                    RootShell.executeCommand("am force-stop com.oculus.systemux")
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun loadAndParseFile() {
-        logToUi("Loading and parsing file...")
-        thread {
-            try {
-                logToUi("Reading content from target file $TARGET_FILE...")
-
-                val content = RootShell.getFileContent(TARGET_FILE)
-                if (content == null) {
-                    runOnUiThread { Toast.makeText(this, "Failed to read original file", Toast.LENGTH_SHORT).show() }
-                    logToUi("Failed to read original file. Output: ${RootShell.lastCommandOutput}")
-                    return@thread
-                }
-
-                logToUi("Parsing XML content...")
-                val parsedAppList = parseAuiPreferences(content)
-
-                runOnUiThread {
-                    Toast.makeText(this, "File loaded successfully, opening editor...", Toast.LENGTH_SHORT).show()
-                    logToUi("File loaded and parsed successfully. Launching editor.")
+                    log("Root access granted.")
+                    val se = RootShell.executeCommand("getenforce").trim()
+                    selinuxStatus = se
                     
-                    val intent = Intent(this, EditPinnedActivity::class.java).apply {
-                        putParcelableArrayListExtra("appList", parsedAppList)
-                    }
-                    startActivity(intent)
-                }
-
-            } catch (e: Exception) {
-                logToUi("Load error: ${e.message}")
-                runOnUiThread { Toast.makeText(this, "Load error: ${e.message}", Toast.LENGTH_SHORT).show() }
-            }
-        }
-    }
-
-    private fun parseAuiPreferences(xmlContent: String): ArrayList<AppInfo> {
-        val localAppList = ArrayList<AppInfo>()
-        try {
-            val startTag = "<string name=\"aui_bar_apps_pinned\">"
-            val startIndex = xmlContent.indexOf(startTag) + startTag.length
-            val endIndex = xmlContent.indexOf("</string>", startIndex)
-
-            if (startIndex < startTag.length || endIndex == -1) {
-                throw Exception("Could not find pinned apps data in file")
-            }
-
-            val jsonString = xmlContent.substring(startIndex, endIndex)
-                .replace("&quot;", "\"")
-                .replace("&amp;", "&")
-
-            val appsArray = JSONArray(jsonString)
-            logToUi("Found ${appsArray.length()} pinned apps.")
-
-            for (i in 0 until appsArray.length()) {
-                val appObj = appsArray.getJSONObject(i)
-                localAppList.add(AppInfo(appObj.toString()))
-            }
-            return localAppList
-
-        } catch (e: JSONException) {
-            logToUi("JSON parsing failed: ${e.message}")
-            throw RuntimeException("Failed to parse app data", e)
-        } catch (e: Exception) {
-            logToUi("Parsing error: ${e.message}")
-            throw RuntimeException(e)
-        }
-    }
-
-    private fun checkSelinuxStatus() {
-        thread {
-            val output = RootShell.executeCommand("getenforce").trim()
-            runOnUiThread {
-                binding.selinuxStatusText.text = when {
-                    output.equals("Enforcing", ignoreCase = true) -> "SELinux: Enforcing ⚠️"
-                    output.equals("Permissive", ignoreCase = true) -> "SELinux: Permissive ✓"
-                    else -> "SELinux: $output ?"
-                }
-            }
-        }
-    }
-
-    private fun checkForExistingBackups() {
-        logToUi("Checking for existing backups...")
-        thread {
-            val backupDir = File(cacheDir, BACKUP_SUBDIR)
-            val backupFiles = if (backupDir.exists()) {
-                backupDir.listFiles { _, name -> name.endsWith(".xml") }
-            } else null
-
-            val count = backupFiles?.size ?: 0
-            
-            runOnUiThread {
-                if (count == 0) {
-                    binding.restoreBackupButton.text = "No Backups Found"
-                    binding.restoreBackupButton.isEnabled = false
-                    logToUi("No backups found.")
+                    val backupDir = File(cacheDir, BACKUP_SUBDIR)
+                    backupCount = backupDir.listFiles { _, name -> name.endsWith(".xml") }?.size ?: 0
                 } else {
-                    binding.restoreBackupButton.text = "Restore Backup ($count)"
-                    binding.restoreBackupButton.isEnabled = true
-                    logToUi("$count backups found.")
+                    log("Root access denied.")
                 }
             }
         }
-    }
 
-    private fun showRestoreBackupDialog() {
-        logToUi("Showing restore backup dialog...")
-        thread {
-            val backupDir = File(cacheDir, BACKUP_SUBDIR)
-            val backupFiles = if (backupDir.exists()) {
-                backupDir.listFiles { _, name -> name.endsWith(".xml") }
-            } else null
-
-            if (backupFiles.isNullOrEmpty()) {
-                runOnUiThread { Toast.makeText(this, "No backup files found", Toast.LENGTH_SHORT).show() }
-                logToUi("Error: No backup files found.")
-                return@thread
-            }
-
-            backupFiles.sortByDescending { it.lastModified() }
-
-            val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
-            val backupNames = backupFiles.map { file ->
-                "${file.name}\n${sdf.format(Date(file.lastModified()))}"
-            }.toTypedArray()
-
-            runOnUiThread {
-                AlertDialog.Builder(this)
-                    .setTitle("Select Backup to Restore")
-                    .setItems(backupNames) { _, which ->
-                        restoreFromBackup(backupFiles[which])
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
-        }
-    }
-
-    private fun showRestoreDefaultDialog() {
-        logToUi("Showing restore default dialog...")
-        AlertDialog.Builder(this)
-            .setTitle("Restore Default Configuration")
-            .setMessage("This will restore the default Oculus dock configuration:\n\n" +
-                    "• Oculus Explore\n" +
-                    "• Oculus Store\n" +
-                    "• Messenger\n" +
-                    "• Share\n" +
-                    "• Oculus Browser\n\n" +
-                    "This will overwrite your current configuration. Continue?")
-            .setPositiveButton("Restore Defaults") { _, _ -> restoreDefaults() }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun restoreFromBackup(backupFile: File) {
-        logToUi("Restoring from backup: ${backupFile.name}")
-        thread {
-            try {
-                val backupContent = backupFile.readText(Charsets.UTF_8)
-                logToUi("Writing content to target file...")
-                val success = RootShell.writeFileContent(TARGET_FILE, backupContent)
-
-                runOnUiThread {
-                    if (success) {
-                        Toast.makeText(this, "Backup restored successfully!\nRestart Oculus system to see changes.", Toast.LENGTH_LONG).show()
-                        logToUi("Restore successful.")
-                    } else {
-                        Toast.makeText(this, "Restore failed. Check log for details.", Toast.LENGTH_SHORT).show()
-                        logToUi("Restore failed. Last command output: ${RootShell.lastCommandOutput}")
-                    }
-                }
-            } catch (e: Exception) {
-                logToUi("Restore error: ${e.message}")
-                runOnUiThread { Toast.makeText(this, "Restore error: ${e.message}", Toast.LENGTH_SHORT).show() }
-            }
-        }
-    }
-
-    private fun restoreDefaults() {
-        logToUi("Restoring default configuration...")
-        thread {
-            try {
-                logToUi("Writing default configuration to target file...")
-                val success = RootShell.writeFileContent(TARGET_FILE, DEFAULT_AUI_PREFERENCES.trimIndent())
-
-                runOnUiThread {
-                    if (success) {
-                        Toast.makeText(this, "Default configuration restored successfully!\nRestart Oculus system to see changes.", Toast.LENGTH_LONG).show()
-                        logToUi("Default configuration restored successfully.")
-                    } else {
-                        Toast.makeText(this, "Restore failed. Check log for details.", Toast.LENGTH_SHORT).show()
-                        logToUi("Restore failed. Last command output: ${RootShell.lastCommandOutput}")
-                    }
-                }
-            } catch (e: Exception) {
-                logToUi("Restore defaults error: ${e.message}")
-                runOnUiThread { Toast.makeText(this, "Restore defaults error: ${e.message}", Toast.LENGTH_SHORT).show() }
-            }
-        }
-    }
-
-    private fun backupFile() {
-        logToUi("Starting backup process...")
-        thread {
-            try {
+        fun handleBackup() {
+            thread {
+                log("Starting backup...")
                 val content = RootShell.getFileContent(TARGET_FILE)
-                if (content == null) {
-                    runOnUiThread { Toast.makeText(this, "Backup failed: Could not read original file.", Toast.LENGTH_SHORT).show() }
-                    logToUi("Backup failed: Could not read original file. Output: ${RootShell.lastCommandOutput}")
-                    return@thread
-                }
-
-                val backupDir = File(cacheDir, BACKUP_SUBDIR).apply { if (!exists()) mkdirs() }
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                val backupFileName = "AUI_PREFERENCES_$timestamp.xml"
-                val backupFile = File(backupDir, backupFileName)
-                
-                logToUi("Saving backup to ${backupFile.absolutePath}")
-                backupFile.writeText(content, Charsets.UTF_8)
-
-                pruneBackups()
-
-                runOnUiThread {
-                    Toast.makeText(this, "Backup created: $backupFileName", Toast.LENGTH_LONG).show()
-                    checkForExistingBackups()
-                    logToUi("Backup created successfully.")
-                }
-
-            } catch (e: Exception) {
-                logToUi("Backup error: ${e.message}")
-                runOnUiThread { Toast.makeText(this, "Backup error: ${e.message}", Toast.LENGTH_SHORT).show() }
-            }
-        }
-    }
-
-    private fun pruneBackups() {
-        val backupDir = File(cacheDir, BACKUP_SUBDIR)
-        if (!backupDir.exists()) return
-
-        val backupFiles = backupDir.listFiles { _, name -> name.endsWith(".xml") } ?: return
-
-        if (backupFiles.size > MAX_BACKUPS) {
-            backupFiles.sortBy { it.lastModified() }
-            val filesToDeleteCount = backupFiles.size - MAX_BACKUPS
-            logToUi("Backup limit exceeded. Deleting $filesToDeleteCount oldest backup(s)...")
-
-            for (i in 0 until filesToDeleteCount) {
-                val oldestFile = backupFiles[i]
-                if (oldestFile.delete()) {
-                    logToUi("Deleted old backup: ${oldestFile.name}")
+                if (content != null) {
+                    val backupDir = File(cacheDir, BACKUP_SUBDIR).apply { if (!exists()) mkdirs() }
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                    val file = File(backupDir, "AUI_PREFERENCES_$timestamp.xml")
+                    file.writeText(content)
+                    
+                    // Prune
+                    val files = backupDir.listFiles { _, name -> name.endsWith(".xml") }?.sortedBy { it.lastModified() }
+                    if (files != null && files.size > MAX_BACKUPS) {
+                        files.take(files.size - MAX_BACKUPS).forEach { it.delete() }
+                    }
+                    
+                    backupCount = backupDir.listFiles { _, name -> name.endsWith(".xml") }?.size ?: 0
+                    log("Backup created: ${file.name}")
                 } else {
-                    logToUi("Failed to delete old backup: ${oldestFile.name}")
+                    log("Backup failed: Could not read target.")
                 }
             }
         }
-    }
 
-    private fun logToUi(message: String) {
-        runOnUiThread {
-            binding.logTextView.append("$message\n")
-            binding.logScrollView.fullScroll(View.FOCUS_DOWN)
+        fun loadAndParse() {
+            log("Loading pinned apps...")
+            thread {
+                try {
+                    val content = RootShell.getFileContent(TARGET_FILE)
+                    if (content == null) {
+                        log("Failed to read file.")
+                        return@thread
+                    }
+
+                    val startTag = "<string name=\"aui_bar_apps_pinned\">"
+                    val startIndex = content.indexOf(startTag) + startTag.length
+                    val endIndex = content.indexOf("</string>", startIndex)
+                    
+                    val jsonString = content.substring(startIndex, endIndex)
+                        .replace("&quot;", "\"")
+                        .replace("&amp;", "&")
+
+                    val appsArray = JSONArray(jsonString)
+                    val localAppList = ArrayList<AppInfo>()
+                    for (i in 0 until appsArray.length()) {
+                        localAppList.add(AppInfo(appsArray.getJSONObject(i).toString()))
+                    }
+
+                    context.startActivity(Intent(context, EditPinnedActivity::class.java).apply {
+                        putParcelableArrayListExtra("appList", localAppList)
+                    })
+                } catch (e: Exception) {
+                    log("Parse error: ${e.message}")
+                }
+            }
+        }
+
+        LaunchedEffect(Unit) { checkRoot() }
+
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Text(
+                text = "dockeditor",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "customizer for the oculus systemux dock by Lumince",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Status Section
+            ListItem(
+                headlineContent = { Text("Root Status") },
+                supportingContent = { Text(if (isRooted) "Access Granted" else "Access Denied") },
+                leadingContent = {
+                    Icon(
+                        imageVector = if (isRooted) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (isRooted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+            )
+            ListItem(
+                headlineContent = { Text("SELinux Status") },
+                supportingContent = { Text(selinuxStatus) },
+                leadingContent = { Icon(Icons.Default.Security, contentDescription = null) }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Action Buttons
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { loadAndParse() }, modifier = Modifier.weight(1f), enabled = isRooted) {
+                    Text("Edit Pinned Apps")
+                }
+                OutlinedButton(onClick = { handleBackup() }, modifier = Modifier.weight(1f), enabled = isRooted) {
+                    Text("Backup")
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { showRestoreDefaultDialog = true }, modifier = Modifier.weight(1f), enabled = isRooted) {
+                    Text("Restore Default")
+                }
+                OutlinedButton(onClick = { showRestoreBackupDialog = true }, modifier = Modifier.weight(1f), enabled = isRooted && backupCount > 0 ) {
+                    Text("Restore Backup")
+                }
+            }
+                
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { 
+                    log("Restarting SystemUX...")
+                    thread { RootShell.executeCommand("am force-stop com.oculus.systemux") } 
+                }, modifier = Modifier.weight(1f), enabled = isRooted) {
+                    Text("Restart UX")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text("Log Output:", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                SelectionContainer {
+                    Text(
+                        text = consoleText,
+                        modifier = Modifier.fillMaxSize().padding(12.dp).verticalScroll(scrollState),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            
+            // Auto-scroll logic
+            LaunchedEffect(consoleText) {
+                scrollState.animateScrollTo(scrollState.maxValue)
+            }
+        }
+
+        // --- Dialogs ---
+        if (showRestoreBackupDialog) {
+            val backupDir = File(cacheDir, BACKUP_SUBDIR)
+            val backupFiles = backupDir.listFiles { _, name -> name.endsWith(".xml") }
+                ?.sortedByDescending { it.lastModified() } ?: emptyList()
+        
+            AlertDialog(
+                onDismissRequest = { showRestoreBackupDialog = false },
+                title = { Text("Select Backup") },
+                text = {
+                    if (backupFiles.isEmpty()) {
+                        Text("No backups found.")
+                    } else {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+                            backupFiles.forEach { file ->
+                                ListItem(
+                                    headlineContent = { Text(file.name) },
+                                    supportingContent = { Text(sdf.format(Date(file.lastModified()))) },
+                                    modifier = Modifier.clickable {
+                                        showRestoreBackupDialog = false
+                                        thread {
+                                            val content = file.readText()
+                                            val success = RootShell.writeFileContent(TARGET_FILE, content)
+                                            log(if (success) "Restored: ${file.name}" else "Restore failed")
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showRestoreBackupDialog = false }) { Text("Close") }
+                }
+            )
+        }
+
+        if (showRestoreDefaultDialog) {
+            AlertDialog(
+                onDismissRequest = { showRestoreDefaultDialog = false },
+                title = { Text("Restore Defaults?") },
+                text = { Text("This will overwrite your dock with the standard Oculus layout.") },
+                confirmButton = {
+                    Button(onClick = {
+                        showRestoreDefaultDialog = false
+                        thread { 
+                            val success = RootShell.writeFileContent(TARGET_FILE, DEFAULT_AUI_PREFERENCES.trimIndent())
+                            log(if (success) "Defaults restored." else "Restore failed.")
+                        }
+                    }) { Text("Restore") }
+                },
+                dismissButton = { TextButton(onClick = { showRestoreDefaultDialog = false }) { Text("Cancel") } }
+            )
         }
     }
 }

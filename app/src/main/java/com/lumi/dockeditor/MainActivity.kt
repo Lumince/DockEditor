@@ -1,13 +1,16 @@
 package com.lumi.dockeditor
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -27,7 +30,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.concurrent.thread
 import org.json.JSONArray
-import org.json.JSONException
 
 class MainActivity : ComponentActivity() {
 
@@ -49,10 +51,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val dynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
             val colorScheme = if (dynamicColor) {
-                if (androidx.compose.foundation.isSystemInDarkTheme()) dynamicDarkColorScheme(LocalContext.current) 
+                if (isSystemInDarkTheme()) dynamicDarkColorScheme(LocalContext.current) 
                 else dynamicLightColorScheme(LocalContext.current)
             } else {
-                if (androidx.compose.foundation.isSystemInDarkTheme()) darkColorScheme() 
+                if (isSystemInDarkTheme()) darkColorScheme() 
                 else lightColorScheme()
             }
 
@@ -69,6 +71,19 @@ class MainActivity : ComponentActivity() {
         RootShell.shutdown()
     }
 
+    private fun isPeopleAppDisabledNative(context: Context): Boolean {
+        return try {
+            val pm = context.packageManager
+            val component = ComponentName(
+                "com.oculus.socialplatform",
+                "com.oculus.panelapp.people.BlendedPeopleActivity"
+            )
+            pm.getComponentEnabledSetting(component) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     @Composable
     fun DockEditorApp() {
         val context = LocalContext.current
@@ -80,12 +95,26 @@ class MainActivity : ComponentActivity() {
         var selinuxStatus by remember { mutableStateOf("Checking...") }
         var backupCount by remember { mutableStateOf(0) }
         
+        // --- Prefs & Tweak State ---
+        val sharedPrefs = remember { context.getSharedPreferences("dockeditor_prefs", Context.MODE_PRIVATE) }
+        val initialPeopleAppDisabled = sharedPrefs.getBoolean("people_app_disabled", false)
+        var isPeopleAppDisabled by remember { mutableStateOf(initialPeopleAppDisabled) }
+
         // --- Dialog States ---
         var showRestoreDefaultDialog by remember { mutableStateOf(false) }
         var showRestoreBackupDialog by remember { mutableStateOf(false) }
 
         fun log(message: String) {
             consoleText += "$message\n"
+        }
+
+        // Background sync for the true state of the People app
+        LaunchedEffect(Unit) {
+            val realState = isPeopleAppDisabledNative(context)
+            if (realState != isPeopleAppDisabled) {
+                isPeopleAppDisabled = realState
+                sharedPrefs.edit().putBoolean("people_app_disabled", realState).apply()
+            }
         }
 
         // --- Logic Functions ---
@@ -232,7 +261,44 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // --- TWEAKS SECTION ---
+            Text("Dock Tweaks", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            ListItem(
+                headlineContent = { Text("Disable Force-Pinned People App") },
+                supportingContent = { Text("Removes the 6th app slot injected on newer firmwares.") },
+                trailingContent = {
+                    Switch(
+                        checked = isPeopleAppDisabled,
+                        onCheckedChange = { disableIt ->
+                            isPeopleAppDisabled = disableIt
+                            sharedPrefs.edit().putBoolean("people_app_disabled", disableIt).apply()
+
+                            thread {
+                                log("Setting People App disabled state to: $disableIt")
+                                val component = "com.oculus.socialplatform/com.oculus.panelapp.people.BlendedPeopleActivity"
+                                val command = if (disableIt) "pm disable $component" else "pm enable $component"
+                                
+                                val result = RootShell.executeCommand(command)
+                                log("Result: ${result.trim()}")
+                                
+                                log("Restarting SystemUX to apply layout changes...")
+                                RootShell.executeCommand("am force-stop com.oculus.systemux")
+                            }
+                        },
+                        enabled = isRooted
+                    )
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
 
             Text("Log Output:", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))

@@ -271,7 +271,6 @@ class MainActivity : ComponentActivity() {
 
             ListItem(
                 headlineContent = { Text("Disable Force-Pinned People App") },
-                supportingContent = { Text("Removes the 6th app slot injected on newer firmwares.") },
                 trailingContent = {
                     Switch(
                         checked = isPeopleAppDisabled,

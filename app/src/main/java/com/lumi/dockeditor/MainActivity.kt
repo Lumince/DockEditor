@@ -37,6 +37,8 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml"
         const val BACKUP_SUBDIR = "backups"
+        const val NAVIGATOR_PINNING_SERVICE_COMPONENT =
+            "com.oculus.systemux/com.oculus.common.navigatoritempinningservice.NavigatorItemPinningService"
         const val MAX_BACKUPS = 3
         const val DEFAULT_AUI_PREFERENCES = """
             <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
@@ -86,6 +88,23 @@ fun isPeopleAppDisabledNative(context: Context): Boolean {
     }
 }
 
+private const val AUI_BACKUP_PREFIX = "AUI_PREFERENCES_"
+
+fun listBackups(context: Context): List<File> {
+    val backupDir = File(context.cacheDir, MainActivity.BACKUP_SUBDIR)
+    val files = backupDir.listFiles { _, name -> name.startsWith(AUI_BACKUP_PREFIX) && name.endsWith(".xml") }
+        ?: emptyArray()
+    return files.sortedByDescending { it.lastModified() }
+}
+
+fun pruneBackups(backupDir: File) {
+    val files = backupDir.listFiles { _, name -> name.startsWith(AUI_BACKUP_PREFIX) && name.endsWith(".xml") }
+        ?.sortedBy { it.lastModified() }
+    if (files != null && files.size > MainActivity.MAX_BACKUPS) {
+        files.take(files.size - MainActivity.MAX_BACKUPS).forEach { it.delete() }
+    }
+}
+
 @Composable
 fun DockEditorScreen() {
     val context = LocalContext.current
@@ -97,6 +116,7 @@ fun DockEditorScreen() {
     var isRooted by remember { mutableStateOf(isPreview) } // Force true in preview to see UI
     var selinuxStatus by remember { mutableStateOf(if (isPreview) "Enforcing (Preview)" else "Checking...") }
     var backupCount by remember { mutableStateOf(if (isPreview) 2 else 0) }
+    var pinningServiceStatus by remember { mutableStateOf(if (isPreview) "Disabled" else "Checking...") }
     
     // --- Prefs & Tweak State ---
     val sharedPrefs = remember { 
@@ -137,9 +157,18 @@ fun DockEditorScreen() {
                 log("Root access granted.")
                 val se = RootShell.executeCommand("getenforce").trim()
                 selinuxStatus = se
-                
-                val backupDir = File(context.cacheDir, MainActivity.BACKUP_SUBDIR)
-                backupCount = backupDir.listFiles { _, name -> name.endsWith(".xml") }?.size ?: 0
+
+                val disableResult = RootShell.executeCommand(
+                    "pm disable ${MainActivity.NAVIGATOR_PINNING_SERVICE_COMPONENT}"
+                ).trim()
+                val disabled = disableResult.contains("new state: disable", ignoreCase = true)
+                pinningServiceStatus = if (disabled) "Disabled" else "Unknown (see log)"
+                log(
+                    if (disabled) "Navigator pinning-reset service disabled (dock reverts fixed)."
+                    else "Could not confirm pinning-reset service is disabled. Output: $disableResult"
+                )
+
+                backupCount = listBackups(context).size
             } else {
                 log("Root access denied.")
             }
@@ -154,24 +183,23 @@ fun DockEditorScreen() {
         }
         thread {
             log("Starting backup...")
-            val content = RootShell.getFileContent(MainActivity.TARGET_FILE)
-            if (content != null) {
-                val backupDir = File(context.cacheDir, MainActivity.BACKUP_SUBDIR).apply { if (!exists()) mkdirs() }
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                val file = File(backupDir, "AUI_PREFERENCES_$timestamp.xml")
-                file.writeText(content)
-                
-                // Prune
-                val files = backupDir.listFiles { _, name -> name.endsWith(".xml") }?.sortedBy { it.lastModified() }
-                if (files != null && files.size > MainActivity.MAX_BACKUPS) {
-                    files.take(files.size - MainActivity.MAX_BACKUPS).forEach { it.delete() }
-                }
-                
-                backupCount = backupDir.listFiles { _, name -> name.endsWith(".xml") }?.size ?: 0
-                log("Backup created: ${file.name}")
-            } else {
-                log("Backup failed: Could not read target.")
+            val auiContent = RootShell.getFileContent(MainActivity.TARGET_FILE)
+
+            if (auiContent == null) {
+                log("Backup failed: Could not read AUI_PREFERENCES.xml.")
+                return@thread
             }
+
+            val backupDir = File(context.cacheDir, MainActivity.BACKUP_SUBDIR).apply { if (!exists()) mkdirs() }
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+
+            File(backupDir, "AUI_PREFERENCES_$timestamp.xml").writeText(auiContent)
+            log("Backed up AUI_PREFERENCES.xml")
+
+            pruneBackups(backupDir)
+
+            backupCount = listBackups(context).size
+            log("Backup created: $timestamp")
         }
     }
 
@@ -348,38 +376,43 @@ fun DockEditorScreen() {
 
     // --- Dialogs ---
     if (showRestoreBackupDialog) {
-        val backupFiles = if (isPreview) {
-            listOf(File("Mock_Backup_1.xml"), File("Mock_Backup_2.xml"))
+        val backups = if (isPreview) {
+            listOf(File("AUI_PREFERENCES_20260819_140000.xml"), File("AUI_PREFERENCES_20260818_090000.xml"))
         } else {
-            val backupDir = File(context.cacheDir, MainActivity.BACKUP_SUBDIR)
-            backupDir.listFiles { _, name -> name.endsWith(".xml") }
-                ?.sortedByDescending { it.lastModified() } ?: emptyList()
+            listBackups(context)
         }
-    
+
         AlertDialog(
             onDismissRequest = { showRestoreBackupDialog = false },
             title = { Text("Select Backup") },
             text = {
-                if (backupFiles.isEmpty()) {
+                if (backups.isEmpty()) {
                     Text("No backups found.")
                 } else {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        val timestampFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
                         val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
-                        backupFiles.forEach { file ->
+                        backups.forEach { file ->
+                            val timestamp = file.name.removePrefix(AUI_BACKUP_PREFIX).removeSuffix(".xml")
+                            val displayDate = if (isPreview) {
+                                "Mock Date"
+                            } else {
+                                try {
+                                    sdf.format(timestampFormat.parse(timestamp) ?: Date(file.lastModified()))
+                                } catch (e: Exception) {
+                                    timestamp
+                                }
+                            }
                             ListItem(
-                                headlineContent = { Text(file.name) },
-                                supportingContent = { 
-                                    Text(if (isPreview) "Mock Date" else sdf.format(Date(file.lastModified()))) 
-                                },
+                                headlineContent = { Text(displayDate) },
                                 modifier = Modifier.clickable {
                                     showRestoreBackupDialog = false
                                     if (isPreview) {
-                                        log("Mock Restored: ${file.name}")
+                                        log("Mock Restored: $displayDate")
                                     } else {
                                         thread {
-                                            val content = file.readText()
-                                            val success = RootShell.writeFileContent(MainActivity.TARGET_FILE, content)
-                                            log(if (success) "Restored: ${file.name}" else "Restore failed")
+                                            val success = RootShell.writeFileContent(MainActivity.TARGET_FILE, file.readText())
+                                            log(if (success) "Restored AUI_PREFERENCES.xml from $displayDate" else "Failed to restore AUI_PREFERENCES.xml")
                                         }
                                     }
                                 }

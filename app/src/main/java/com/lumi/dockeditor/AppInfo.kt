@@ -7,6 +7,7 @@ import android.os.Parcel
 import android.os.Parcelable
 import org.json.JSONException
 import org.json.JSONObject
+import java.util.UUID
 
 // Moving variables to the primary constructor with default values fixes the build errors
 class AppInfo(
@@ -15,7 +16,8 @@ class AppInfo(
     var platformName: String = "ANDROID_6DOF",
     var activity: String = "",
     var componentName: String = "",
-    var originalJsonString: String = ""
+    var originalJsonString: String = "",
+    val instanceId: String = UUID.randomUUID().toString()
 ) : Parcelable {
 
     // Secondary constructor for parsing JSON
@@ -70,7 +72,8 @@ class AppInfo(
         platformName = parcel.readString() ?: "",
         activity = parcel.readString() ?: "",
         componentName = parcel.readString() ?: "",
-        originalJsonString = parcel.readString() ?: ""
+        originalJsonString = parcel.readString() ?: "",
+        instanceId = parcel.readString() ?: UUID.randomUUID().toString()
     )
 
     override fun writeToParcel(dest: Parcel, flags: Int) {
@@ -80,6 +83,7 @@ class AppInfo(
         dest.writeString(activity)
         dest.writeString(componentName)
         dest.writeString(originalJsonString)
+        dest.writeString(instanceId)
     }
 
     override fun describeContents(): Int = 0

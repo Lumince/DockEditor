@@ -49,6 +49,8 @@ class EditPinnedActivity : ComponentActivity() {
     companion object {
         private const val TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml"
         private const val MAX_APPS = 5
+        private const val EMPTY_PREFS_XML_HEADER = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
+        private const val EMPTY_PREFS_XML = "$EMPTY_PREFS_XML_HEADER<map>\n</map>\n"
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -178,7 +180,7 @@ class EditPinnedActivity : ComponentActivity() {
             ) {
                 itemsIndexed(
                     items = appList,
-                    key = { _, app -> "${app.packageName}_${app.componentName}" } 
+                    key = { _, app -> app.instanceId }
                 ) { index, app ->
                     val isDragging = draggedItemIndex == index
                     
@@ -409,24 +411,61 @@ class EditPinnedActivity : ComponentActivity() {
                         put("packageName", app.packageName)
                         val appPanelData = optJSONObject("appPanelData") ?: JSONObject()
                         if (app.componentName.isNotEmpty()) appPanelData.put("componentName", app.componentName) else appPanelData.remove("componentName")
+                        if (!appPanelData.has("volumetricWindowTokens")) {
+                            appPanelData.put("volumetricWindowTokens", JSONArray())
+                        }
                         put("appPanelData", appPanelData)
                         remove("activity")
                     }
                     newAppsArray.put(appObj)
                 }
+                val encodedPinnedJson = newAppsArray.toString().replace("\\/", "/").replace("\"", "&quot;")
 
-                val encodedJson = newAppsArray.toString().replace("\\/", "/").replace("\"", "&quot;")
-                val newXmlContent = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n<string name=\"aui_bar_apps_pinned\">$encodedJson</string>\n<string name=\"aui_bar_apps_history\">[]</string>\n</map>"
-                val success = RootShell.writeFileContent(TARGET_FILE, newXmlContent)
+                var auiXml = RootShell.getFileContent(TARGET_FILE) ?: EMPTY_PREFS_XML
+                auiXml = upsertXmlString(auiXml, "aui_bar_apps_pinned", encodedPinnedJson)
+                auiXml = upsertXmlString(auiXml, "aui_bar_apps_history", "[]")
+                auiXml = upsertXmlBoolean(auiXml, "aui_bar_default_apps_pinned", false)
+                val success = RootShell.writeFileContent(TARGET_FILE, auiXml)
+
+                if (success) {
+                    RootShell.executeCommand("am force-stop com.oculus.systemux")
+                }
 
                 runOnUiThread {
-                    if (success) Toast.makeText(this@EditPinnedActivity, "Pinned apps updated!", Toast.LENGTH_LONG).show()
+                    if (success) Toast.makeText(this@EditPinnedActivity, "Updated!", Toast.LENGTH_LONG).show()
                     else Toast.makeText(this@EditPinnedActivity, "Root access required to save.", Toast.LENGTH_SHORT).show()
                     onComplete(success)
                 }
             } catch (e: Exception) {
                 runOnUiThread { onComplete(false) }
             }
+        }
+    }
+
+    private fun upsertXmlString(xmlContent: String, key: String, encodedValue: String): String {
+        val entryRegex = Regex(
+            """[ \t]*<string name="${Regex.escape(key)}">.*?</string>[ \t]*\r?\n?""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        val stripped = xmlContent.replace(entryRegex, "")
+        val newEntry = "<string name=\"$key\">$encodedValue</string>\n"
+        return if (stripped.contains("</map>")) {
+            stripped.replaceFirst("</map>", "$newEntry</map>")
+        } else {
+            "$EMPTY_PREFS_XML_HEADER<map>\n$newEntry</map>\n"
+        }
+    }
+
+    private fun upsertXmlBoolean(xmlContent: String, key: String, value: Boolean): String {
+        val entryRegex = Regex(
+            """[ \t]*<boolean name="${Regex.escape(key)}" value="[^"]*"\s*/>[ \t]*\r?\n?"""
+        )
+        val stripped = xmlContent.replace(entryRegex, "")
+        val newEntry = "<boolean name=\"$key\" value=\"$value\" />\n"
+        return if (stripped.contains("</map>")) {
+            stripped.replaceFirst("</map>", "$newEntry</map>")
+        } else {
+            "$EMPTY_PREFS_XML_HEADER<map>\n$newEntry</map>\n"
         }
     }
 }

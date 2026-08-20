@@ -1,6 +1,6 @@
 
 # Dock Editor for Meta Quest
-A simple tool for the Quest 3/3s that allows you to edit the pinned applications on the dock.
+A simple tool for Quest headsets that allows you to edit the pinned applications on Dock UI.
 
 # About The Project
 This app was created so that users with root access can edit their dock's pinned apps without having to disable apps or editing the AUI_PREFERENCES.xml manually.

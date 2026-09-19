@@ -158,15 +158,22 @@ fun DockEditorScreen() {
                 val se = RootShell.executeCommand("getenforce").trim()
                 selinuxStatus = se
 
-                val disableResult = RootShell.executeCommand(
-                    "pm disable ${MainActivity.NAVIGATOR_PINNING_SERVICE_COMPONENT}"
-                ).trim()
-                val disabled = disableResult.contains("new state: disable", ignoreCase = true)
-                pinningServiceStatus = if (disabled) "Disabled" else "Unknown (see log)"
-                log(
-                    if (disabled) "Navigator pinning-reset service disabled (dock reverts fixed)."
-                    else "Could not confirm pinning-reset service is disabled. Output: $disableResult"
-                )
+                val navigatorOutput = RootShell.executeCommand("oculuspreferences --getc navigator_enabled").trim()
+                val isNavigatorEnabled = navigatorOutput.contains("navigator_enabled : true", ignoreCase = true)
+
+                if (isNavigatorEnabled) {
+                    log("Navigator UI is active. Skipping disabling Navigator pinning-reset service.")
+                } else {
+                    val disableResult = RootShell.executeCommand(
+                        "pm disable ${MainActivity.NAVIGATOR_PINNING_SERVICE_COMPONENT}"
+                    ).trim()
+                    val disabled = disableResult.contains("new state: disable", ignoreCase = true)
+                    pinningServiceStatus = if (disabled) "Disabled" else "Unknown (see log)"
+                    log(
+                        if (disabled) "Navigator pinning-reset service disabled (dock reverts fixed)."
+                        else "Could not confirm pinning-reset service is disabled. Output: $disableResult"
+                    )
+                }
 
                 backupCount = listBackups(context).size
             } else {

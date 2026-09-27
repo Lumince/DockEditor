@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
@@ -35,7 +36,14 @@ import org.json.JSONArray
 class MainActivity : ComponentActivity() {
 
     companion object {
-        const val TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml"
+        private fun getCurrentUserId(): Int {
+            return android.os.Process.myUserHandle().hashCode() and 0x7FFFFFFF % 100000
+        }
+
+        val TARGET_FILE: String
+            get() = "/data/user/${getCurrentUserId()}/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml"
+        val CURRENT_USER_ID: Int
+            get() = getCurrentUserId()
         const val BACKUP_SUBDIR = "backups"
         const val NAVIGATOR_PINNING_SERVICE_COMPONENT =
             "com.oculus.systemux/com.oculus.common.navigatoritempinningservice.NavigatorItemPinningService"
@@ -165,7 +173,7 @@ fun DockEditorScreen() {
                     log("Navigator UI is active. Skipping disabling Navigator pinning-reset service.")
                 } else {
                     val disableResult = RootShell.executeCommand(
-                        "pm disable ${MainActivity.NAVIGATOR_PINNING_SERVICE_COMPONENT}"
+                        "pm disable --user ${MainActivity.CURRENT_USER_ID} ${MainActivity.NAVIGATOR_PINNING_SERVICE_COMPONENT}"
                     ).trim()
                     val disabled = disableResult.contains("new state: disable", ignoreCase = true)
                     pinningServiceStatus = if (disabled) "Disabled" else "Unknown (see log)"
@@ -343,7 +351,7 @@ fun DockEditorScreen() {
                         thread {
                             log("Setting People App disabled state to: $disableIt")
                             val component = "com.oculus.socialplatform/com.oculus.panelapp.people.BlendedPeopleActivity"
-                            val command = if (disableIt) "pm disable $component" else "pm enable $component"
+                            val command = if (disableIt) "pm disable --user ${MainActivity.CURRENT_USER_ID} $component" else "pm enable --user ${MainActivity.CURRENT_USER_ID} $component"
                             
                             val result = RootShell.executeCommand(command)
                             log("Result: ${result.trim()}")

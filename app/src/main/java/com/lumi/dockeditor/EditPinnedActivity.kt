@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -47,7 +48,6 @@ import org.json.JSONObject
 class EditPinnedActivity : ComponentActivity() {
 
     companion object {
-        private const val TARGET_FILE = "/data/user/0/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml"
         private const val MAX_APPS = 5
         private const val EMPTY_PREFS_XML_HEADER = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
         private const val EMPTY_PREFS_XML = "$EMPTY_PREFS_XML_HEADER<map>\n</map>\n"
@@ -421,11 +421,11 @@ class EditPinnedActivity : ComponentActivity() {
                 }
                 val encodedPinnedJson = newAppsArray.toString().replace("\\/", "/").replace("\"", "&quot;")
 
-                var auiXml = RootShell.getFileContent(TARGET_FILE) ?: EMPTY_PREFS_XML
+                var auiXml = RootShell.getFileContent(MainActivity.TARGET_FILE) ?: EMPTY_PREFS_XML
                 auiXml = upsertXmlString(auiXml, "aui_bar_apps_pinned", encodedPinnedJson)
                 auiXml = upsertXmlString(auiXml, "aui_bar_apps_history", "[]")
                 auiXml = upsertXmlBoolean(auiXml, "aui_bar_default_apps_pinned", false)
-                val success = RootShell.writeFileContent(TARGET_FILE, auiXml)
+                val success = RootShell.writeFileContent(MainActivity.TARGET_FILE, auiXml)
 
                 if (success) {
                     RootShell.executeCommand("am force-stop com.oculus.systemux")

@@ -17,7 +17,7 @@ One-Tap Apply: A built-in "Restart SystemUI" button immediately applies your cha
 Light & Dark Themes
 
 # Requirements
-A Meta Quest 3/3s with root access and sideloading enabled.
+A Meta Quest headset with root access and sideloading enabled.
 ADB Shell with root access setup (This is a backup plan explained further down)
 
 # Installation
@@ -32,7 +32,11 @@ Grant root access when prompted.
 # ⚠️ Disclaimer
 I do not take responsibility for any damage caused by this app. Use at your own risk. I have tried my best to make sure that this app does it's best to not mess up. This does not mess with anything other than the AUI_PREFERENCES.xml file, and folders/files in this apps data folder.
 
-If for any reason SystemUX crashes, you can delete the AUI_PREFERENCES.xml file in /data/data/com.oculus.systemux/shared_prefs/ and restart, or disable then enable, SystemUX with adb.
+If for any reason SystemUX crashes, you can delete the AUI_PREFERENCES.xml file in /data/data/com.oculus.systemux/shared_prefs/ and restart, or disable then enable, SystemUX with adb.  
+#### (If using an interactive adb shell either from a computer or directly on the headset remove `adb shell` from the following commands)
+- Remove file: `adb shell rm /data/data/com.oculus.systemux/shared_prefs/AUI_PREFERENCES.xml`
+- Disable SystemUX: `adb shell pm disable-user --user 0 com.oculus.systemux`
+- Enable SystmUX: `adb shell pm enable com.oculus.systemux`
 
 # How It Works
 The app uses a persistent root shell (su) to safely read and write to the AUI_PREFERENCES.xml file located at:

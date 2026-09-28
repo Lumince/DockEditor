@@ -17,7 +17,7 @@ One-Tap Apply: A built-in "Restart SystemUI" button immediately applies your cha
 Light & Dark Themes
 
 # Requirements
-A Meta Quest 3/3s with root access and sideloading enabled.
+A Meta Quest 2/3/3s/Pro with root access and sideloading enabled.
 ADB Shell with root access setup (This is a backup plan explained further down)
 
 # Installation

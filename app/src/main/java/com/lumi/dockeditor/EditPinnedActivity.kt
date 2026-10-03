@@ -48,7 +48,6 @@ import org.json.JSONObject
 class EditPinnedActivity : ComponentActivity() {
 
     companion object {
-        private const val MAX_APPS = 5
         private const val EMPTY_PREFS_XML_HEADER = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
         private const val EMPTY_PREFS_XML = "$EMPTY_PREFS_XML_HEADER<map>\n</map>\n"
     }
@@ -69,6 +68,9 @@ class EditPinnedActivity : ComponentActivity() {
             return
         }
 
+        val maxApps = intent.getIntExtra("maxApps", DockLimit.current.max).coerceAtMost(DockLimit.HARD_MAX)
+        val limitNote = intent.getStringExtra("limitNote")
+
         setContent {
             val dynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
             val colorScheme = if (dynamicColor) {
@@ -84,7 +86,7 @@ class EditPinnedActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    EditPinnedScreen(initialList = initialList)
+                    EditPinnedScreen(initialList = initialList, maxApps = maxApps, limitNote = limitNote)
                 }
             }
         }
@@ -92,7 +94,7 @@ class EditPinnedActivity : ComponentActivity() {
 
     @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
     @Composable
-    fun EditPinnedScreen(initialList: List<AppInfo>) {
+    fun EditPinnedScreen(initialList: List<AppInfo>, maxApps: Int, limitNote: String?) {
         val appList = remember { mutableStateListOf<AppInfo>().apply { addAll(initialList) } }
         var hasUnsavedChanges by remember { mutableStateOf(false) }
         
@@ -153,13 +155,14 @@ class EditPinnedActivity : ComponentActivity() {
             bottomBar = {
                 BottomActionRow(
                     appListSize = appList.size,
+                    maxApps = maxApps,
                     hasUnsavedChanges = hasUnsavedChanges,
                     onAddClicked = {
                         editingIndex = null
                         appSelectionLauncher.launch(Intent(context, AppSelectionActivity::class.java))
                     },
                     onSaveClicked = {
-                        saveChanges(appList.toList()) { success ->
+                        saveChanges(appList.toList(), initialList.size) { success ->
                             if (success) {
                                 hasUnsavedChanges = false
                                 finish()
@@ -178,6 +181,21 @@ class EditPinnedActivity : ComponentActivity() {
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (limitNote != null) {
+                    item(key = "limit-note") {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = limitNote,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
                 itemsIndexed(
                     items = appList,
                     key = { _, app -> app.instanceId }
@@ -365,6 +383,7 @@ class EditPinnedActivity : ComponentActivity() {
     @Composable
     fun BottomActionRow(
         appListSize: Int,
+        maxApps: Int,
         hasUnsavedChanges: Boolean,
         onAddClicked: () -> Unit,
         onSaveClicked: () -> Unit
@@ -383,9 +402,9 @@ class EditPinnedActivity : ComponentActivity() {
                 OutlinedButton(
                     onClick = onAddClicked,
                     modifier = Modifier.weight(1f),
-                    enabled = appListSize < MAX_APPS
+                    enabled = appListSize < maxApps
                 ) {
-                    Text(if (appListSize >= MAX_APPS) "Max (${appListSize}/$MAX_APPS)" else "Add App (${appListSize}/$MAX_APPS)")
+                    Text(if (appListSize >= maxApps) "Max (${appListSize}/$maxApps)" else "Add App (${appListSize}/$maxApps)")
                 }
 
                 Button(
@@ -399,9 +418,21 @@ class EditPinnedActivity : ComponentActivity() {
         }
     }
 
-    private fun saveChanges(currentList: List<AppInfo>, onComplete: (Boolean) -> Unit) {
+    private fun saveChanges(currentList: List<AppInfo>, originalCount: Int, onComplete: (Boolean) -> Unit) {
         thread {
             try {
+                val limitNow = DockLimit.detect(MainActivity.CURRENT_USER_ID)
+                if (!DockLimit.canSave(limitNow, currentList.size, originalCount)) {
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@EditPinnedActivity,
+                            "Not saved: ${currentList.size} apps need the UX Patcher pin patch, which is not active. ${limitNow.detail}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        onComplete(false)
+                    }
+                    return@thread
+                }
                 val newAppsArray = JSONArray()
                 for (app in currentList) {
                     val appObj = try { JSONObject(app.originalJsonString) } catch (e: Exception) {

@@ -124,6 +124,9 @@ fun DockEditorScreen() {
     var isRooted by remember { mutableStateOf(isPreview) } // Force true in preview to see UI
     var selinuxStatus by remember { mutableStateOf(if (isPreview) "Enforcing (Preview)" else "Checking...") }
     var backupCount by remember { mutableStateOf(if (isPreview) 2 else 0) }
+    var moduleStatus by remember { mutableStateOf(if (isPreview) "Active (Preview)" else "Checking...") }
+    var moduleDetail by remember { mutableStateOf("") }
+    var moduleOk by remember { mutableStateOf(isPreview) }
     var pinningServiceStatus by remember { mutableStateOf(if (isPreview) "Disabled" else "Checking...") }
     
     // --- Prefs & Tweak State ---
@@ -168,6 +171,12 @@ fun DockEditorScreen() {
 
                 val navigatorOutput = RootShell.executeCommand("oculuspreferences --getc navigator_enabled").trim()
                 val isNavigatorEnabled = navigatorOutput.contains("navigator_enabled : true", ignoreCase = true)
+
+                val dockLimit = DockLimit.detect(MainActivity.CURRENT_USER_ID)
+                moduleStatus = "${dockLimit.state.label} - limit ${dockLimit.max}"
+                moduleDetail = dockLimit.detail
+                moduleOk = dockLimit.extended
+                log("Dock pin limit: ${dockLimit.max} apps (${dockLimit.source}).")
 
                 if (isNavigatorEnabled) {
                     log("Navigator UI is active. Skipping disabling Navigator pinning-reset service.")
@@ -246,8 +255,16 @@ fun DockEditorScreen() {
                     localAppList.add(AppInfo(appsArray.getJSONObject(i).toString()))
                 }
 
+                val dockLimit = DockLimit.coerceForList(DockLimit.detect(MainActivity.CURRENT_USER_ID), localAppList.size)
+                moduleStatus = "${dockLimit.state.label} - limit ${dockLimit.max}"
+                moduleDetail = dockLimit.detail
+                moduleOk = dockLimit.extended
+                log("Dock pin limit: ${dockLimit.max} apps (${dockLimit.source}).")
+
                 context.startActivity(Intent(context, EditPinnedActivity::class.java).apply {
                     putParcelableArrayListExtra("appList", localAppList)
+                    putExtra("maxApps", dockLimit.max)
+                    if (!dockLimit.extended) putExtra("limitNote", dockLimit.detail)
                 })
             } catch (e: Exception) {
                 log("Parse error: ${e.message}")

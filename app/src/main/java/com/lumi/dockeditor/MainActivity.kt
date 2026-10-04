@@ -179,7 +179,16 @@ fun DockEditorScreen() {
                 log("Dock pin limit: ${dockLimit.max} apps (${dockLimit.source}).")
 
                 if (isNavigatorEnabled) {
-                    log("Navigator UI is active. Skipping disabling Navigator pinning-reset service.")
+                    // Navigator UI needs this service (app list / unknown sources); an earlier Dock UI run may have disabled it.
+                    val enableResult = RootShell.executeCommand(
+                        "pm enable --user ${MainActivity.CURRENT_USER_ID} ${MainActivity.NAVIGATOR_PINNING_SERVICE_COMPONENT}"
+                    ).trim()
+                    val enabled = enableResult.contains("new state: enabled", ignoreCase = true)
+                    pinningServiceStatus = if (enabled) "Enabled (Navigator UI)" else "Unknown (see log)"
+                    log(
+                        if (enabled) "Navigator UI is active. Navigator pinning service enabled."
+                        else "Navigator UI is active, could not confirm the pinning service is enabled. Output: $enableResult"
+                    )
                 } else {
                     val disableResult = RootShell.executeCommand(
                         "pm disable --user ${MainActivity.CURRENT_USER_ID} ${MainActivity.NAVIGATOR_PINNING_SERVICE_COMPONENT}"
@@ -187,7 +196,7 @@ fun DockEditorScreen() {
                     val disabled = disableResult.contains("new state: disable", ignoreCase = true)
                     pinningServiceStatus = if (disabled) "Disabled" else "Unknown (see log)"
                     log(
-                        if (disabled) "Navigator pinning-reset service disabled (dock reverts fixed)."
+                        if (disabled) "Navigator pinning-reset service disabled"
                         else "Could not confirm pinning-reset service is disabled. Output: $disableResult"
                     )
                 }

@@ -11,8 +11,8 @@ android {
         applicationId = "com.lumi.dockeditor"
         minSdk = 32
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.1.8.1"
+        versionCode = 7
+        versionName = "0.1.8.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

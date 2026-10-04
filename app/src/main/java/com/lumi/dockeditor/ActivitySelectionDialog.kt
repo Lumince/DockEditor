@@ -35,7 +35,8 @@ class ActivitySelectionDialog(
             layoutManager = LinearLayoutManager(context)
         }
         
-        val adapter = ActivitySelectionAdapter(activities, listener)
+        val colors = ModuleTheme.dialogColors()
+        val adapter = ActivitySelectionAdapter(activities, listener, colors)
         recyclerView.adapter = adapter
         
         val dialog = AlertDialog.Builder(context)
@@ -45,6 +46,18 @@ class ActivitySelectionDialog(
             .show()
             
         adapter.setDialog(dialog)
+
+        // UX Patcher colours
+        if (colors != null) {
+            dialog.window?.setBackgroundDrawable(
+                android.graphics.drawable.GradientDrawable().apply {
+                    setColor(colors.bg)
+                    cornerRadius = 28f * context.resources.displayMetrics.density
+                }
+            )
+            dialog.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)?.setTextColor(colors.text)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(colors.button)
+        }
     }
 
     /**
@@ -100,7 +113,8 @@ class ActivitySelectionDialog(
      */
     private class ActivitySelectionAdapter(
         private val activities: List<com.lumi.dockeditor.ActivityInfo>,
-        private val listener: OnActivitySelectedListener
+        private val listener: OnActivitySelectedListener,
+        private val colors: ModuleTheme.DialogColors?
     ) : RecyclerView.Adapter<ActivitySelectionAdapter.ViewHolder>() {
         
         private var dialog: Dialog? = null
@@ -119,6 +133,10 @@ class ActivitySelectionDialog(
             val activity = activities[position]
             holder.activityName.text = activity.getDisplayText()
             holder.activityFullName.text = if (activity.name.isEmpty()) "Default" else activity.name
+            if (colors != null) {
+                holder.activityName.setTextColor(colors.text)
+                holder.activityFullName.setTextColor(colors.muted)
+            }
             
             holder.itemView.setOnClickListener {
                 listener.onActivitySelected(activity)

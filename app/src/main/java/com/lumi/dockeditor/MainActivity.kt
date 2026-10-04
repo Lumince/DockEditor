@@ -33,7 +33,7 @@ import java.util.*
 import kotlin.concurrent.thread
 import org.json.JSONArray
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ThemedActivity() {
 
     companion object {
         private fun getCurrentUserId(): Int {
@@ -60,14 +60,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val dynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            val colorScheme = if (dynamicColor) {
-                if (isSystemInDarkTheme()) dynamicDarkColorScheme(LocalContext.current) 
-                else dynamicLightColorScheme(LocalContext.current)
-            } else {
-                if (isSystemInDarkTheme()) darkColorScheme() 
-                else lightColorScheme()
-            }
+            val colorScheme = ModuleTheme.colorScheme()
 
             MaterialTheme(colorScheme = colorScheme) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

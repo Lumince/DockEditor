@@ -27,21 +27,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class AppSelectionActivity : ComponentActivity() {
+class AppSelectionActivity : ThemedActivity() {
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
-            val dynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            val colorScheme = if (dynamicColor) {
-                if (isSystemInDarkTheme()) dynamicDarkColorScheme(LocalContext.current)
-                else dynamicLightColorScheme(LocalContext.current)
-            } else {
-                if (isSystemInDarkTheme()) darkColorScheme()
-                else lightColorScheme()
-            }
+            val colorScheme = ModuleTheme.colorScheme()
 
             MaterialTheme(colorScheme = colorScheme) {
                 Surface(

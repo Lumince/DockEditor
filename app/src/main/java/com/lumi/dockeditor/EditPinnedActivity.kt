@@ -45,7 +45,7 @@ import kotlin.concurrent.thread
 import org.json.JSONArray
 import org.json.JSONObject
 
-class EditPinnedActivity : ComponentActivity() {
+class EditPinnedActivity : ThemedActivity() {
 
     companion object {
         private const val EMPTY_PREFS_XML_HEADER = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n"
@@ -72,14 +72,7 @@ class EditPinnedActivity : ComponentActivity() {
         val limitNote = intent.getStringExtra("limitNote")
 
         setContent {
-            val dynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            val colorScheme = if (dynamicColor) {
-                if (isSystemInDarkTheme()) dynamicDarkColorScheme(LocalContext.current)
-                else dynamicLightColorScheme(LocalContext.current)
-            } else {
-                if (isSystemInDarkTheme()) darkColorScheme()
-                else lightColorScheme()
-            }
+            val colorScheme = ModuleTheme.colorScheme()
 
             MaterialTheme(colorScheme = colorScheme) {
                 Surface(
